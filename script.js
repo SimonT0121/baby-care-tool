@@ -2493,4 +2493,413 @@ async function exportData() {
       diaper: await getAllFromDB(STORES.DIAPER),
       health: await getAllFromDB(STORES.HEALTH),
       milestones: await getAllFromDB(STORES.MILESTONES),
-      activities: await getAllFromDB(STORES.
+      activities: await getAllFromDB(STORES.ACTIVITIES),
+      interactions: await getAllFromDB(STORES.INTERACTIONS),
+      settings: await getAllFromDB(STORES.SETTINGS)
+    };
+    
+    // 創建下載連結
+    const dataStr = JSON.stringify(allData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `baby-care-backup-${formatDateForFilename(new Date())}.json`;
+    link.click();
+    
+    // 清理 URL
+    URL.revokeObjectURL(url);
+    
+    showNotification('資料已成功匯出', 'success');
+  } catch (error) {
+    console.error('匯出資料錯誤:', error);
+    showNotification('匯出失敗，請重試', 'error');
+  }
+}
+
+/**
+ * 匯入資料
+ */
+async function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    // 驗證資料格式
+    if (!data.children) {
+      throw new Error('無效的備份檔案格式');
+    }
+    
+    // 確認匯入
+    showConfirmModal(
+      `確定要匯入備份資料嗎？這將覆蓋現有的所有資料！\n備份時間：${formatDateTime(new Date(data.exportDate))}`,
+      async () => {
+        try {
+          // 清空現有資料
+          await clearAllData();
+          
+          // 匯入新資料
+          await importAllData(data);
+          
+          // 重新載入應用
+          currentChildId = null;
+          await loadChildren();
+          
+          showNotification('資料已成功匯入', 'success');
+        } catch (error) {
+          console.error('匯入資料錯誤:', error);
+          showNotification('匯入失敗，請重試', 'error');
+        }
+      }
+    );
+  } catch (error) {
+    console.error('讀取備份檔案錯誤:', error);
+    showNotification('無法讀取備份檔案，請檢查檔案格式', 'error');
+  }
+  
+  // 清除文件輸入值，允許重複選擇同一個文件
+  event.target.value = '';
+}
+
+/**
+ * 清空所有資料
+ */
+async function clearAllData() {
+  const transaction = db.transaction(Object.values(STORES), 'readwrite');
+  
+  for (const storeName of Object.values(STORES)) {
+    const store = transaction.objectStore(storeName);
+    await store.clear();
+  }
+  
+  await transaction.complete;
+}
+
+/**
+ * 匯入所有資料
+ */
+async function importAllData(data) {
+  // 匯入孩子資料
+  if (data.children) {
+    for (const child of data.children) {
+      await saveToDb(STORES.CHILDREN, child);
+    }
+  }
+  
+  // 匯入其他類型的記錄
+  const recordTypes = [
+    { key: 'feeding', store: STORES.FEEDING },
+    { key: 'sleep', store: STORES.SLEEP },
+    { key: 'diaper', store: STORES.DIAPER },
+    { key: 'health', store: STORES.HEALTH },
+    { key: 'milestones', store: STORES.MILESTONES },
+    { key: 'activities', store: STORES.ACTIVITIES },
+    { key: 'interactions', store: STORES.INTERACTIONS },
+    { key: 'settings', store: STORES.SETTINGS }
+  ];
+  
+  for (const { key, store } of recordTypes) {
+    if (data[key]) {
+      for (const record of data[key]) {
+        await saveToDb(store, record);
+      }
+    }
+  }
+}
+
+/**
+ * 顯示通知訊息
+ */
+function showNotification(message, type = 'info') {
+  // 創建通知元素
+  const notification = document.createElement('div');
+  notification.className = `notification notification-${type}`;
+  notification.textContent = message;
+  
+  // 添加樣式
+  Object.assign(notification.style, {
+    position: 'fixed',
+    top: '20px',
+    right: '20px',
+    padding: '12px 24px',
+    borderRadius: '8px',
+    color: 'white',
+    fontWeight: '500',
+    zIndex: '1001',
+    opacity: '0',
+    transform: 'translateY(-20px)',
+    transition: 'all 0.3s ease'
+  });
+  
+  // 設定背景顏色
+  switch (type) {
+    case 'success':
+      notification.style.backgroundColor = '#4CAF50';
+      break;
+    case 'error':
+      notification.style.backgroundColor = '#f44336';
+      break;
+    case 'warning':
+      notification.style.backgroundColor = '#FF9800';
+      break;
+    default:
+      notification.style.backgroundColor = '#2196F3';
+  }
+  
+  // 添加到頁面
+  document.body.appendChild(notification);
+  
+  // 顯示動畫
+  setTimeout(() => {
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateY(0)';
+  }, 10);
+  
+  // 自動移除
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    notification.style.transform = 'translateY(-20px)';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 3000);
+}
+
+/**
+ * 計算持續時間
+ */
+function calculateDuration(startTime, endTime) {
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+  const diffMs = end - start;
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (diffHours > 0) {
+    return `${diffHours}小時${diffMinutes}分鐘`;
+  } else {
+    return `${diffMinutes}分鐘`;
+  }
+}
+
+/**
+ * 格式化日期時間為顯示用
+ */
+function formatDateTime(date) {
+  return new Intl.DateTimeFormat('zh-TW', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: currentTimezone
+  }).format(date);
+}
+
+/**
+ * 格式化日期為顯示用
+ */
+function formatDate(date) {
+  return new Intl.DateTimeFormat('zh-TW', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: currentTimezone
+  }).format(date);
+}
+
+/**
+ * 格式化日期時間為輸入框用
+ */
+function formatDateTimeForInput(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * 格式化日期為輸入框用
+ */
+function formatDateForInput(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * 格式化日期為檔案名稱用
+ */
+function formatDateForFilename(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  
+  return `${year}${month}${day}_${hours}${minutes}`;
+}
+
+// IndexedDB 操作函數
+
+/**
+ * 儲存資料到資料庫
+ */
+function saveToDb(storeName, data) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.add(data);
+    
+    request.onsuccess = () => {
+      resolve({
+        ...data,
+        id: request.result
+      });
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * 從資料庫獲取單一記錄
+ */
+function getFromDB(storeName, id) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.get(id);
+    
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * 獲取所有記錄
+ */
+function getAllFromDB(storeName) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readonly');
+    const store = transaction.objectStore(storeName);
+    const request = store.getAll();
+    
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * 更新資料庫記錄
+ */
+function updateInDB(storeName, data) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.put(data);
+    
+    request.onsuccess = () => {
+      resolve(data);
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * 從資料庫刪除記錄
+ */
+function deleteFromDB(storeName, id) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.delete(id);
+    
+    request.onsuccess = () => {
+      resolve();
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * 根據孩子ID獲取記錄
+ */
+function getRecordsByChildId(storeName, childId) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readonly');
+    const store = transaction.objectStore(storeName);
+    const index = store.index('childId');
+    const request = index.getAll(childId);
+    
+    request.onsuccess = () => {
+      // 按時間戳排序（最新的在前）
+      const records = request.result.sort((a, b) => {
+        const timeA = new Date(a.timestamp || a.startTime || a.time || a.date);
+        const timeB = new Date(b.timestamp || b.startTime || b.time || b.date);
+        return timeB - timeA;
+      });
+      resolve(records);
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * 根據日期範圍獲取記錄
+ */
+function getRecordsByDateRange(storeName, childId, startDate, endDate) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([storeName], 'readonly');
+    const store = transaction.objectStore(storeName);
+    const index = store.index('childId');
+    const request = index.getAll(childId);
+    
+    request.onsuccess = () => {
+      const records = request.result.filter(record => {
+        const recordDate = new Date(record.startTime || record.time || record.date);
+        return recordDate >= startDate && recordDate < endDate;
+      });
+      resolve(records);
+    };
+    
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
+}
+
+// 啟動應用程式
+document.addEventListener('DOMContentLoaded', initApp);
