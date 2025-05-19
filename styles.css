@@ -1,1810 +1,1150 @@
-// 全局變數
-let db;
-let currentChild = null;
-let currentPage = 'dashboard';
-let editingRecordId = null;
+/* =================================================
+   嬰幼兒照護追蹤應用 - 樣式表
+   溫暖友善的設計，支援深色/淺色主題
+   ================================================= */
 
-// 預設里程碑數據
-const defaultMilestones = {
-    motor: [
-        { title: '抬頭', description: '俯臥時能抬起頭部', ageMonths: 1 },
-        { title: '翻身', description: '能從仰臥翻到俯臥', ageMonths: 4 },
-        { title: '坐立', description: '能獨立坐著不倒', ageMonths: 6 },
-        { title: '爬行', description: '能用手膝爬行', ageMonths: 8 },
-        { title: '扶站', description: '扶著東西站立', ageMonths: 9 },
-        { title: '獨立行走', description: '能獨立走幾步', ageMonths: 12 }
-    ],
-    language: [
-        { title: '發出聲音', description: '開始發出咯咯聲', ageMonths: 2 },
-        { title: '認識聲音', description: '聽到聲音會轉頭', ageMonths: 4 },
-        { title: '咿呀學語', description: '發出Ba、Da等音', ageMonths: 6 },
-        { title: '說第一個字', description: '會說媽媽或爸爸', ageMonths: 10 },
-        { title: '簡單詞彙', description: '會說2-3個單詞', ageMonths: 12 }
-    ],
-    social: [
-        { title: '社交微笑', description: '看到人會笑', ageMonths: 2 },
-        { title: '認識照顧者', description: '認得主要照顧者', ageMonths: 4 },
-        { title: '認生', description: '開始怕生', ageMonths: 6 },
-        { title: '模仿動作', description: '會模仿拍手等動作', ageMonths: 9 },
-        { title: '分離焦慮', description: '離開父母會哭鬧', ageMonths: 10 }
-    ],
-    cognitive: [
-        { title: '追視物品', description: '眼睛會跟隨物品移動', ageMonths: 2 },
-        { title: '認識物品', description: '認識熟悉的物品', ageMonths: 6 },
-        { title: '物品恆存', description: '知道被遮住的物品還存在', ageMonths: 8 },
-        { title: '因果關係', description: '理解動作和結果的關係', ageMonths: 10 },
-        { title: '解決問題', description: '能解決簡單問題', ageMonths: 12 }
-    ],
-    selfcare: [
-        { title: '吸吮反射', description: '能正常吸吮', ageMonths: 0 },
-        { title: '用手抓取', description: '能用手抓住物品', ageMonths: 4 },
-        { title: '用杯子喝水', description: '能用杯子喝水', ageMonths: 8 },
-        { title: '自己用餐具', description: '開始用湯匙吃飯', ageMonths: 12 },
-        { title: '便盆訓練', description: '開始便盆訓練', ageMonths: 18 }
-    ]
-};
-
-// 活動類型對應圖標和名稱
-const activityTypes = {
-    bath: { name: '洗澡', icon: 'fas fa-shower' },
-    massage: { name: '按摩', icon: 'fas fa-hands' },
-    change: { name: '換衣服/護理', icon: 'fas fa-tshirt' },
-    tummy: { name: '俯臥時間', icon: 'fas fa-baby' },
-    sensory: { name: '感官遊戲', icon: 'fas fa-hand-paper' },
-    reading: { name: '親子共讀', icon: 'fas fa-book' },
-    music: { name: '音樂互動', icon: 'fas fa-music' },
-    walk: { name: '散步/推車', icon: 'fas fa-walking' },
-    sunlight: { name: '曬太陽', icon: 'fas fa-sun' },
-    social: { name: '社交互動', icon: 'fas fa-users' },
-    custom: { name: '自定義活動', icon: 'fas fa-star' }
-};
-
-// IndexedDB 初始化
-async function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open('BabyTrackerDB', 1);
-        
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-        
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            
-            // 孩子檔案
-            if (!db.objectStoreNames.contains('children')) {
-                const childStore = db.createObjectStore('children', { keyPath: 'id' });
-                childStore.createIndex('name', 'name', { unique: false });
-            }
-            
-            // 餵食記錄
-            if (!db.objectStoreNames.contains('feeding')) {
-                const feedingStore = db.createObjectStore('feeding', { keyPath: 'id' });
-                feedingStore.createIndex('childId', 'childId', { unique: false });
-                feedingStore.createIndex('timestamp', 'timestamp', { unique: false });
-            }
-            
-            // 睡眠記錄
-            if (!db.objectStoreNames.contains('sleep')) {
-                const sleepStore = db.createObjectStore('sleep', { keyPath: 'id' });
-                sleepStore.createIndex('childId', 'childId', { unique: false });
-                sleepStore.createIndex('startTime', 'startTime', { unique: false });
-            }
-            
-            // 尿布記錄
-            if (!db.objectStoreNames.contains('diaper')) {
-                const diaperStore = db.createObjectStore('diaper', { keyPath: 'id' });
-                diaperStore.createIndex('childId', 'childId', { unique: false });
-                diaperStore.createIndex('timestamp', 'timestamp', { unique: false });
-            }
-            
-            // 健康記錄
-            if (!db.objectStoreNames.contains('health')) {
-                const healthStore = db.createObjectStore('health', { keyPath: 'id' });
-                healthStore.createIndex('childId', 'childId', { unique: false });
-                healthStore.createIndex('category', 'category', { unique: false });
-                healthStore.createIndex('date', 'date', { unique: false });
-            }
-            
-            // 里程碑
-            if (!db.objectStoreNames.contains('milestones')) {
-                const milestoneStore = db.createObjectStore('milestones', { keyPath: 'id' });
-                milestoneStore.createIndex('childId', 'childId', { unique: false });
-                milestoneStore.createIndex('category', 'category', { unique: false });
-            }
-            
-            // 活動記錄
-            if (!db.objectStoreNames.contains('activities')) {
-                const activityStore = db.createObjectStore('activities', { keyPath: 'id' });
-                activityStore.createIndex('childId', 'childId', { unique: false });
-                activityStore.createIndex('type', 'type', { unique: false });
-                activityStore.createIndex('timestamp', 'timestamp', { unique: false });
-            }
-            
-            // 互動記錄
-            if (!db.objectStoreNames.contains('interactions')) {
-                const interactionStore = db.createObjectStore('interactions', { keyPath: 'id' });
-                interactionStore.createIndex('childId', 'childId', { unique: false });
-                interactionStore.createIndex('timestamp', 'timestamp', { unique: false });
-            }
-        };
-    });
+/* CSS 變數定義 - 淺色主題 */
+:root {
+    /* 主要色彩 */
+    --primary-color: #ff6b9d;
+    --primary-light: #ffb3d1;
+    --primary-dark: #e55985;
+    --secondary-color: #6ba3ff;
+    --accent-color: #ffd93d;
+    
+    /* 中性色彩 */
+    --background-color: #fef9f3;
+    --surface-color: #ffffff;
+    --surface-secondary: #f8f4f0;
+    --text-primary: #4a4a4a;
+    --text-secondary: #7a7a7a;
+    --text-muted: #a0a0a0;
+    --border-color: #e8e8e8;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    
+    /* 狀態色彩 */
+    --success-color: #4ade80;
+    --warning-color: #facc15;
+    --error-color: #f87171;
+    --info-color: #60a5fa;
+    
+    /* 間距和尺寸 */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    --spacing-2xl: 3rem;
+    
+    --border-radius: 12px;
+    --border-radius-sm: 8px;
+    --border-radius-lg: 16px;
+    
+    /* 字體大小 */
+    --font-xs: 0.75rem;
+    --font-sm: 0.875rem;
+    --font-md: 1rem;
+    --font-lg: 1.125rem;
+    --font-xl: 1.25rem;
+    --font-2xl: 1.5rem;
+    --font-3xl: 2rem;
+    
+    /* 陰影 */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
-// 通用數據庫操作
-async function dbOperation(storeName, operation, data = null) {
-    const transaction = db.transaction([storeName], operation === 'get' || operation === 'getAll' ? 'readonly' : 'readwrite');
-    const store = transaction.objectStore(storeName);
+/* 深色主題變數 */
+[data-theme="dark"] {
+    --background-color: #1a1a1a;
+    --surface-color: #2a2a2a;
+    --surface-secondary: #3a3a3a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #b0b0b0;
+    --text-muted: #808080;
+    --border-color: #404040;
+    --shadow-color: rgba(0, 0, 0, 0.3);
     
-    let request;
-    switch (operation) {
-        case 'add':
-            request = store.add(data);
-            break;
-        case 'put':
-            request = store.put(data);
-            break;
-        case 'delete':
-            request = store.delete(data);
-            break;
-        case 'get':
-            request = store.get(data);
-            break;
-        case 'getAll':
-            request = store.getAll();
-            break;
-        case 'getByIndex':
-            const index = store.index(data.indexName);
-            request = index.getAll(data.value);
-            break;
+    --primary-color: #ff8fb3;
+    --primary-light: #ffb3d1;
+    --primary-dark: #e55985;
+}
+
+/* =================================================
+   基礎樣式
+   ================================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    line-height: 1.6;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* =================================================
+   頂部導航
+   ================================================= */
+
+.header {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    padding: var(--spacing-md);
+    box-shadow: var(--shadow-md);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.header h1 {
+    font-size: var(--font-2xl);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.nav-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.child-selector {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: none;
+    border-radius: var(--border-radius-sm);
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-primary);
+    font-size: var(--font-sm);
+    min-width: 150px;
+}
+
+.theme-toggle {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    padding: var(--spacing-sm);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.3s ease;
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* =================================================
+   主要導航
+   ================================================= */
+
+.main-nav {
+    background: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 var(--spacing-md);
+    position: sticky;
+    top: 76px;
+    z-index: 999;
+}
+
+.nav-tabs {
+    display: flex;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.nav-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.nav-tab {
+    background: none;
+    border: none;
+    padding: var(--spacing-md);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+}
+
+.nav-tab:hover {
+    color: var(--primary-color);
+    background: var(--surface-secondary);
+}
+
+.nav-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.nav-tab i {
+    font-size: var(--font-lg);
+}
+
+/* =================================================
+   主要內容區域
+   ================================================= */
+
+.main-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--spacing-lg);
+}
+
+.page {
+    display: none;
+}
+
+.page.active {
+    display: block;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.page-header h2 {
+    color: var(--text-primary);
+    font-size: var(--font-2xl);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* =================================================
+   卡片樣式
+   ================================================= */
+
+.card {
+    background: var(--surface-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+.card h3 {
+    color: var(--text-primary);
+    font-size: var(--font-xl);
+    font-weight: 600;
+    margin-bottom: var(--spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* =================================================
+   歡迎區域
+   ================================================= */
+
+.welcome-section {
+    text-align: center;
+    margin-bottom: var(--spacing-2xl);
+    padding: var(--spacing-xl);
+    background: linear-gradient(135deg, var(--primary-light), var(--secondary-color));
+    border-radius: var(--border-radius-lg);
+    color: white;
+}
+
+.welcome-section h2 {
+    font-size: var(--font-3xl);
+    margin-bottom: var(--spacing-sm);
+}
+
+.welcome-section p {
+    font-size: var(--font-lg);
+    opacity: 0.9;
+}
+
+/* =================================================
+   寶寶管理
+   ================================================= */
+
+.children-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.child-card {
+    background: var(--surface-secondary);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    text-align: center;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.child-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+}
+
+.child-card.selected {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+    color: white;
+}
+
+.child-photo {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    margin: 0 auto var(--spacing-md);
+    background: var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-2xl);
+    color: var(--text-muted);
+    overflow: hidden;
+}
+
+.child-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.child-name {
+    font-size: var(--font-lg);
+    font-weight: 600;
+    margin-bottom: var(--spacing-xs);
+}
+
+.child-age {
+    color: var(--text-muted);
+    font-size: var(--font-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.child-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: center;
+}
+
+/* =================================================
+   今日摘要
+   ================================================= */
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.summary-item {
+    background: var(--surface-secondary);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius-sm);
+    text-align: center;
+    border-left: 4px solid var(--primary-color);
+}
+
+.summary-value {
+    font-size: var(--font-2xl);
+    font-weight: 700;
+    color: var(--primary-color);
+    display: block;
+}
+
+.summary-label {
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+    margin-top: var(--spacing-xs);
+}
+
+/* =================================================
+   快速記錄
+   ================================================= */
+
+.quick-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.quick-btn {
+    background: white;
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+    text-decoration: none;
+    color: var(--text-primary);
+}
+
+.quick-btn:hover {
+    border-color: var(--primary-color);
+    background: var(--surface-secondary);
+    transform: translateY(-2px);
+}
+
+.quick-btn i {
+    font-size: var(--font-2xl);
+    color: var(--primary-color);
+}
+
+.quick-btn span {
+    font-weight: 500;
+}
+
+/* =================================================
+   記錄列表
+   ================================================= */
+
+.records-list {
+    display: grid;
+    gap: var(--spacing-md);
+}
+
+.record-item {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.record-item:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.record-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-sm);
+}
+
+.record-type {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.record-time {
+    color: var(--text-muted);
+    font-size: var(--font-sm);
+}
+
+.record-details {
+    margin-bottom: var(--spacing-sm);
+}
+
+.record-detail {
+    margin-bottom: var(--spacing-xs);
+    display: flex;
+    justify-content: space-between;
+}
+
+.record-label {
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+}
+
+.record-value {
+    font-weight: 500;
+}
+
+.record-notes {
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+    font-style: italic;
+    margin-top: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--border-color);
+}
+
+.record-actions {
+    position: absolute;
+    top: var(--spacing-md);
+    right: var(--spacing-md);
+    display: flex;
+    gap: var(--spacing-xs);
+}
+
+/* =================================================
+   里程碑分類
+   ================================================= */
+
+.milestones-categories {
+    margin-bottom: var(--spacing-lg);
+}
+
+.category-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-lg);
+}
+
+.category-tab {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 2px solid var(--border-color);
+    background: white;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: var(--font-sm);
+}
+
+.category-tab:hover {
+    border-color: var(--primary-color);
+    background: var(--surface-secondary);
+}
+
+.category-tab.active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+/* =================================================
+   統計頁面
+   ================================================= */
+
+.stats-controls {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+}
+
+.export-buttons {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--spacing-lg);
+}
+
+.stat-card {
+    min-height: 300px;
+}
+
+.stat-card canvas {
+    max-height: 250px;
+}
+
+/* =================================================
+   按鈕樣式
+   ================================================= */
+
+.btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: none;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-size: var(--font-sm);
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    transition: all 0.3s ease;
+    outline: none;
+}
+
+.btn:focus {
+    box-shadow: 0 0 0 3px rgba(255, 107, 157, 0.3);
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: var(--text-muted);
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: var(--text-secondary);
+}
+
+.btn-danger {
+    background: var(--error-color);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #dc2626;
+}
+
+.btn-sm {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-xs);
+}
+
+.btn-icon {
+    padding: var(--spacing-xs);
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* =================================================
+   模態視窗
+   ================================================= */
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    backdrop-filter: blur(4px);
+}
+
+.modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
     }
-    
-    return new Promise((resolve, reject) => {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-// 生成唯一ID
-function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-// 格式化日期時間
-function formatDateTime(timestamp) {
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-TW', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-// 格式化日期
-function formatDate(date) {
-    return new Date(date).toLocaleDateString('zh-TW');
-}
-
-// 計算年齡
-function calculateAge(birthDate) {
-    const now = new Date();
-    const birth = new Date(birthDate);
-    const diffTime = Math.abs(now - birth);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 30) {
-        return `${diffDays} 天`;
-    } else if (diffDays < 365) {
-        const months = Math.floor(diffDays / 30);
-        return `${months} 個月`;
-    } else {
-        const years = Math.floor(diffDays / 365);
-        const months = Math.floor((diffDays % 365) / 30);
-        return months > 0 ? `${years} 歲 ${months} 個月` : `${years} 歲`;
-    }
-}
-
-// 計算持續時間
-function calculateDuration(startTime, endTime) {
-    if (!endTime) return '';
-    const duration = Math.abs(new Date(endTime) - new Date(startTime));
-    const hours = Math.floor(duration / (1000 * 60 * 60));
-    const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
-    return hours > 0 ? `${hours}小時${minutes}分鐘` : `${minutes}分鐘`;
-}
-
-// 圖片轉換為Base64
-function convertToBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-}
-
-// 初始化應用
-async function initApp() {
-    try {
-        // 顯示載入畫面
-        document.getElementById('loading').style.display = 'flex';
-        
-        // 初始化數據庫
-        db = await initDB();
-        
-        // 載入孩子列表
-        await loadChildren();
-        
-        // 初始化預設里程碑
-        await initDefaultMilestones();
-        
-        // 設置事件監聽器
-        setupEventListeners();
-        
-        // 載入儲存的主題
-        loadTheme();
-        
-        // 設置當前日期
-        document.getElementById('currentDate').textContent = 
-            new Date().toLocaleDateString('zh-TW', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric',
-                weekday: 'long'
-            });
-        
-        // 載入總覽頁面
-        showPage('dashboard');
-        
-        // 隱藏載入畫面，顯示應用
-        setTimeout(() => {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('app').style.display = 'block';
-        }, 1000);
-        
-    } catch (error) {
-        console.error('初始化失敗:', error);
-        alert('應用初始化失敗，請重新整理頁面。');
-    }
-}
-
-// 設置事件監聽器
-function setupEventListeners() {
-    // 導航點擊
-    document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = item.dataset.page;
-            if (page) {
-                showPage(page);
-            }
-        });
-    });
-    
-    // 孩子選擇器
-    document.getElementById('childSelector').addEventListener('change', (e) => {
-        const childId = e.target.value;
-        if (childId) {
-            selectChild(childId);
-        }
-    });
-    
-    // 主題切換
-    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-    
-    // 設定按鈕
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-        showModal('settingsModal');
-    });
-    
-    // 表單提交
-    document.getElementById('childForm').addEventListener('submit', handleChildSubmit);
-    document.getElementById('feedingForm').addEventListener('submit', handleFeedingSubmit);
-    document.getElementById('sleepForm').addEventListener('submit', handleSleepSubmit);
-    document.getElementById('diaperForm').addEventListener('submit', handleDiaperSubmit);
-    document.getElementById('healthForm').addEventListener('submit', handleHealthSubmit);
-    document.getElementById('milestoneForm').addEventListener('submit', handleMilestoneSubmit);
-    document.getElementById('activityForm').addEventListener('submit', handleActivitySubmit);
-    document.getElementById('interactionForm').addEventListener('submit', handleInteractionSubmit);
-    
-    // 照片預覽
-    document.getElementById('childPhoto').addEventListener('change', (e) => previewPhoto(e, 'childPhotoPreview'));
-    document.getElementById('activityPhoto').addEventListener('change', (e) => previewPhoto(e, 'activityPhotoPreview'));
-    document.getElementById('interactionPhoto').addEventListener('change', (e) => previewPhoto(e, 'interactionPhotoPreview'));
-    
-    // 餵食類型變更
-    document.getElementById('feedingType').addEventListener('change', toggleFeedingFields);
-    
-    // 健康類別變更
-    document.getElementById('healthCategory').addEventListener('change', toggleHealthFields);
-    
-    // 活動類型變更
-    document.getElementById('activityType').addEventListener('change', toggleActivityFields);
-    
-    // 過濾標籤
-    document.querySelectorAll('.filter-tab').forEach(tab => {
-        tab.addEventListener('click', (e) => {
-            document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-            e.target.classList.add('active');
-            loadFeedingRecords();
-        });
-    });
-    
-    document.querySelectorAll('.health-tab').forEach(tab => {
-        tab.addEventListener('click', (e) => {
-            document.querySelectorAll('.health-tab').forEach(t => t.classList.remove('active'));
-            e.target.classList.add('active');
-            loadHealthRecords();
-        });
-    });
-    
-    document.querySelectorAll('.category-tab').forEach(tab => {
-        tab.addEventListener('click', (e) => {
-            document.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
-            e.target.classList.add('active');
-            loadMilestones();
-        });
-    });
-    
-    // 統計日期範圍變更
-    document.getElementById('statsDateRange').addEventListener('change', loadStatistics);
-    
-    // 模態框外點擊關閉
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeModal(modal.id);
-            }
-        });
-    });
-    
-    // 側邊欄切換（移動端）
-    window.addEventListener('resize', handleResize);
-    handleResize();
-}
-
-// 處理螢幕大小變化
-function handleResize() {
-    const sidebar = document.getElementById('sidebar');
-    if (window.innerWidth >= 768) {
-        sidebar.classList.add('open');
-    } else {
-        sidebar.classList.remove('open');
-    }
-}
-
-// 切換側邊欄
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    sidebar.classList.toggle('open');
-}
-
-// 載入主題
-function loadTheme() {
-    const theme = localStorage.getItem('babyTrackerTheme') || 'light';
-    document.documentElement.setAttribute('data-theme', theme);
-    updateThemeIcon(theme);
-}
-
-// 切換主題
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('babyTrackerTheme', newTheme);
-    updateThemeIcon(newTheme);
-}
-
-// 更新主題圖標
-function updateThemeIcon(theme) {
-    const icon = document.querySelector('#themeToggle i');
-    icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
-}
-
-// 顯示頁面
-function showPage(pageId) {
-    // 更新導航狀態
-    document.querySelectorAll('.nav-item, .bottom-nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    document.querySelectorAll(`[data-page="${pageId}"]`).forEach(item => {
-        item.classList.add('active');
-    });
-    
-    // 顯示對應頁面
-    document.querySelectorAll('.page').forEach(page => {
-        page.classList.remove('active');
-    });
-    document.getElementById(pageId).classList.add('active');
-    
-    currentPage = pageId;
-    
-    // 關閉側邊欄（移動端）
-    if (window.innerWidth < 768) {
-        document.getElementById('sidebar').classList.remove('open');
-    }
-    
-    // 載入頁面數據
-    loadPageData(pageId);
-}
-
-// 載入頁面數據
-async function loadPageData(pageId) {
-    if (!currentChild) return;
-    
-    switch (pageId) {
-        case 'dashboard':
-            await loadDashboard();
-            break;
-        case 'children':
-            await loadChildren();
-            break;
-        case 'feeding':
-            await loadFeedingRecords();
-            break;
-        case 'sleep':
-            await loadSleepRecords();
-            break;
-        case 'diaper':
-            await loadDiaperRecords();
-            break;
-        case 'health':
-            await loadHealthRecords();
-            break;
-        case 'milestones':
-            await loadMilestones();
-            break;
-        case 'activities':
-            await loadActivityRecords();
-            break;
-        case 'interaction':
-            await loadInteractionRecords();
-            break;
-        case 'statistics':
-            await loadStatistics();
-            break;
-    }
-}
-
-// 顯示模態框
-function showModal(modalId) {
-    const modal = document.getElementById(modalId);
-    modal.classList.add('show');
-    modal.style.display = 'flex';
-    
-    // 重置表單
-    const form = modal.querySelector('form');
-    if (form) {
-        form.reset();
-        // 清除照片預覽
-        modal.querySelectorAll('.photo-preview').forEach(preview => {
-            preview.innerHTML = '';
-        });
-    }
-}
-
-// 關閉模態框
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    modal.classList.remove('show');
-    modal.style.display = 'none';
-    editingRecordId = null;
-}
-
-// 照片預覽
-async function previewPhoto(event, previewId) {
-    const file = event.target.files[0];
-    const preview = document.getElementById(previewId);
-    
-    if (file) {
-        try {
-            const base64 = await convertToBase64(file);
-            preview.innerHTML = `<img src="${base64}" alt="照片預覽">`;
-        } catch (error) {
-            console.error('圖片處理失敗:', error);
-            alert('圖片處理失敗，請重試。');
-        }
-    } else {
-        preview.innerHTML = '';
-    }
-}
-
-// 切換餵食欄位
-function toggleFeedingFields() {
-    const type = document.getElementById('feedingType').value;
-    const breastGroup = document.getElementById('breastGroup');
-    const amountGroup = document.getElementById('amountGroup');
-    
-    if (type === 'breast') {
-        breastGroup.style.display = 'block';
-        amountGroup.style.display = 'none';
-        // 設置當前時間為開始時間
-        document.getElementById('feedingStartTime').value = new Date().toISOString().slice(0, 16);
-    } else if (type === 'formula' || type === 'solid') {
-        breastGroup.style.display = 'none';
-        amountGroup.style.display = 'block';
-        document.getElementById('feedingUnit').value = type === 'formula' ? 'ml' : 'g';
-    } else {
-        breastGroup.style.display = 'none';
-        amountGroup.style.display = 'none';
-    }
-    
-    // 設置記錄時間為當前時間
-    if (!document.getElementById('feedingTime').value) {
-        document.getElementById('feedingTime').value = new Date().toISOString().slice(0, 16);
-    }
-}
-
-// 切換健康欄位
-function toggleHealthFields() {
-    const category = document.getElementById('healthCategory').value;
-    const temperatureGroup = document.getElementById('temperatureGroup');
-    
-    if (category === 'temperature') {
-        temperatureGroup.style.display = 'block';
-    } else {
-        temperatureGroup.style.display = 'none';
-    }
-    
-    // 設置當前日期
-    if (!document.getElementById('healthDate').value) {
-        document.getElementById('healthDate').value = new Date().toISOString().split('T')[0];
-    }
-}
-
-// 切換活動欄位
-function toggleActivityFields() {
-    const type = document.getElementById('activityType').value;
-    const customGroup = document.getElementById('customActivityGroup');
-    
-    if (type === 'custom') {
-        customGroup.style.display = 'block';
-    } else {
-        customGroup.style.display = 'none';
-    }
-    
-    // 設置當前時間
-    if (!document.getElementById('activityTime').value) {
-        document.getElementById('activityTime').value = new Date().toISOString().slice(0, 16);
-    }
-}
-
-// 載入孩子列表
-async function loadChildren() {
-    try {
-        const children = await dbOperation('children', 'getAll');
-        const childrenGrid = document.getElementById('childrenGrid');
-        const childSelector = document.getElementById('childSelector');
-        
-        // 清空現有內容
-        childrenGrid.innerHTML = '';
-        childSelector.innerHTML = '<option value="">請選擇寶寶</option>';
-        
-        if (children.length === 0) {
-            childrenGrid.innerHTML = '<p class="no-data">尚未新增孩子資訊</p>';
-            return;
-        }
-        
-        // 產生孩子卡片和選項
-        children.forEach(child => {
-            // 孩子卡片
-            const age = calculateAge(child.birthDate);
-            const photoSrc = child.photo || '/api/placeholder/120/120';
-            
-            const cardHtml = `
-                <div class="child-card">
-                    <img src="${photoSrc}" alt="${child.name}" class="child-photo">
-                    <div class="child-info">
-                        <h3>${child.name}</h3>
-                        <div class="child-details">
-                            <span class="child-age">${age}</span>
-                            ${child.gender ? `<span> • ${child.gender === 'male' ? '男' : '女'}</span>` : ''}
-                            <div style="margin-top: 8px;">
-                                <small>出生日期: ${formatDate(child.birthDate)}</small>
-                            </div>
-                            ${child.notes ? `<div style="margin-top: 8px;"><small>${child.notes}</small></div>` : ''}
-                        </div>
-                    </div>
-                    <div class="child-actions">
-                        <button class="btn-small btn-primary-small" onclick="selectChild('${child.id}')">
-                            <i class="fas fa-check"></i> 選擇
-                        </button>
-                        <button class="btn-small btn-secondary-small" onclick="editChild('${child.id}')">
-                            <i class="fas fa-edit"></i> 編輯
-                        </button>
-                        <button class="btn-small btn-secondary-small" onclick="deleteChild('${child.id}')">
-                            <i class="fas fa-trash"></i> 刪除
-                        </button>
-                    </div>
-                </div>
-            `;
-            childrenGrid.insertAdjacentHTML('beforeend', cardHtml);
-            
-            // 選項
-            const option = document.createElement('option');
-            option.value = child.id;
-            option.textContent = child.name;
-            childSelector.appendChild(option);
-        });
-        
-        // 如果有儲存的當前孩子，選擇它
-        const savedChildId = localStorage.getItem('currentChildId');
-        if (savedChildId && children.find(c => c.id === savedChildId)) {
-            selectChild(savedChildId);
-        }
-        
-    } catch (error) {
-        console.error('載入孩子列表失敗:', error);
-        document.getElementById('childrenGrid').innerHTML = '<p class="no-data">載入失敗</p>';
-    }
-}
-
-// 選擇孩子
-async function selectChild(childId) {
-    try {
-        const child = await dbOperation('children', 'get', childId);
-        if (child) {
-            currentChild = child;
-            document.getElementById('childSelector').value = childId;
-            localStorage.setItem('currentChildId', childId);
-            
-            // 重新載入當前頁面數據
-            await loadPageData(currentPage);
-            
-            // 顯示成功訊息
-            showToast(`已選擇 ${child.name}`);
-        }
-    } catch (error) {
-        console.error('選擇孩子失敗:', error);
-        alert('選擇孩子失敗，請重試。');
-    }
-}
-
-// 顯示孩子表單
-function showChildForm(editId = null) {
-    const modal = document.getElementById('childModal');
-    const title = document.getElementById('childModalTitle');
-    
-    if (editId) {
-        title.textContent = '編輯孩子資訊';
-        editingRecordId = editId;
-        loadChildForEdit(editId);
-    } else {
-        title.textContent = '新增孩子';
-        editingRecordId = null;
-    }
-    
-    showModal('childModal');
-}
-
-// 載入編輯的孩子資訊
-async function loadChildForEdit(childId) {
-    try {
-        const child = await dbOperation('children', 'get', childId);
-        if (child) {
-            document.getElementById('childName').value = child.name;
-            document.getElementById('childBirthDate').value = child.birthDate;
-            document.getElementById('childGender').value = child.gender || '';
-            document.getElementById('childNotes').value = child.notes || '';
-            
-            if (child.photo) {
-                document.getElementById('childPhotoPreview').innerHTML = 
-                    `<img src="${child.photo}" alt="照片預覽">`;
-            }
-        }
-    } catch (error) {
-        console.error('載入孩子資訊失敗:', error);
-        alert('載入孩子資訊失敗，請重試。');
+    to {
+        opacity: 1;
     }
 }
 
-// 編輯孩子
-function editChild(childId) {
-    showChildForm(childId);
+.modal-content {
+    background: var(--surface-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: modalSlideIn 0.3s ease;
 }
 
-// 刪除孩子
-function deleteChild(childId) {
-    document.getElementById('confirmMessage').textContent = '確定要刪除這個孩子的所有資訊嗎？此操作無法復原。';
-    document.getElementById('confirmDeleteBtn').onclick = async () => {
-        try {
-            await dbOperation('children', 'delete', childId);
-            
-            // 如果刪除的是當前選中的孩子，清除選擇
-            if (currentChild && currentChild.id === childId) {
-                currentChild = null;
-                localStorage.removeItem('currentChildId');
-                document.getElementById('childSelector').value = '';
-            }
-            
-            await loadChildren();
-            closeModal('confirmModal');
-            showToast('孩子資訊已刪除');
-        } catch (error) {
-            console.error('刪除孩子失敗:', error);
-            alert('刪除失敗，請重試。');
-        }
-    };
-    showModal('confirmModal');
-}
-
-// 處理孩子表單提交
-async function handleChildSubmit(e) {
-    e.preventDefault();
-    
-    try {
-        const formData = {
-            id: editingRecordId || generateId(),
-            name: document.getElementById('childName').value,
-            birthDate: document.getElementById('childBirthDate').value,
-            gender: document.getElementById('childGender').value || null,
-            notes: document.getElementById('childNotes').value || null,
-            photo: null,
-            createdAt: editingRecordId ? undefined : Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        // 處理照片
-        const photoFile = document.getElementById('childPhoto').files[0];
-        if (photoFile) {
-            formData.photo = await convertToBase64(photoFile);
-        } else if (editingRecordId) {
-            // 編輯時保留原有照片
-            const existingChild = await dbOperation('children', 'get', editingRecordId);
-            formData.photo = existingChild.photo;
-        }
-        
-        await dbOperation('children', 'put', formData);
-        
-        closeModal('childModal');
-        await loadChildren();
-        showToast(editingRecordId ? '孩子資訊已更新' : '孩子資訊已新增');
-        
-    } catch (error) {
-        console.error('儲存孩子資訊失敗:', error);
-        alert('儲存失敗，請重試。');
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
     }
 }
 
-// 載入總覽數據
-async function loadDashboard() {
-    if (!currentChild) {
-        document.getElementById('todayFeedings').textContent = '0';
-        document.getElementById('todaySleep').textContent = '0';
-        document.getElementById('todayDiapers').textContent = '0';
-        document.getElementById('recentActivities').innerHTML = '<p class="no-data">請先選擇孩子</p>';
-        return;
-    }
-    
-    try {
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-        const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
-        
-        // 載入今日餵食次數
-        const feedings = await dbOperation('feeding', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        const todayFeedings = feedings.filter(f => f.timestamp >= startOfDay && f.timestamp < endOfDay);
-        document.getElementById('todayFeedings').textContent = todayFeedings.length;
-        
-        // 載入今日睡眠時間
-        const sleeps = await dbOperation('sleep', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        const todaySleeps = sleeps.filter(s => s.startTime >= startOfDay && s.startTime < endOfDay);
-        let totalSleepMinutes = 0;
-        todaySleeps.forEach(sleep => {
-            if (sleep.endTime) {
-                totalSleepMinutes += (sleep.endTime - sleep.startTime) / (1000 * 60);
-            }
-        });
-        const sleepHours = (totalSleepMinutes / 60).toFixed(1);
-        document.getElementById('todaySleep').textContent = sleepHours;
-        
-        // 載入今日尿布次數
-        const diapers = await dbOperation('diaper', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        const todayDiapers = diapers.filter(d => d.timestamp >= startOfDay && d.timestamp < endOfDay);
-        document.getElementById('todayDiapers').textContent = todayDiapers.length;
-        
-        // 載入最近互動
-        const interactions = await dbOperation('interactions', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        const recentInteractions = interactions
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 3);
-        
-        const recentActivitiesEl = document.getElementById('recentActivities');
-        if (recentInteractions.length === 0) {
-            recentActivitiesEl.innerHTML = '<p class="no-data">暫無互動記錄</p>';
-        } else {
-            recentActivitiesEl.innerHTML = recentInteractions.map(interaction => `
-                <div style="padding: 8px 0; border-bottom: 1px solid var(--border-color);">
-                    <div style="font-weight: 600; color: var(--primary-color);">
-                        ${interaction.mood === 'happy' ? '😊' : 
-                          interaction.mood === 'calm' ? '😌' : 
-                          interaction.mood === 'fussy' ? '😣' : '😴'} 
-                        ${interaction.event || '互動記錄'}
-                    </div>
-                    <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                        ${formatDateTime(interaction.timestamp)}
-                    </div>
-                    ${interaction.notes ? `<div style="font-size: 0.8rem; color: var(--text-light); margin-top: 4px;">${interaction.notes}</div>` : ''}
-                </div>
-            `).join('');
-        }
-        
-    } catch (error) {
-        console.error('載入總覽數據失敗:', error);
-    }
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
 }
 
-// 快速記錄功能
-function quickAddFeeding() {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
-    }
-    showFeedingForm();
+.modal-header h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-xl);
 }
 
-function quickAddSleep() {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
-    }
-    showSleepForm();
+.modal-close {
+    background: none;
+    border: none;
+    font-size: var(--font-xl);
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: var(--spacing-xs);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
 }
 
-function quickAddDiaper() {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
-    }
-    showDiaperForm();
+.modal-close:hover {
+    background: var(--surface-secondary);
+    color: var(--text-primary);
 }
 
-function quickAddInteraction() {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
-    }
-    showInteractionForm();
+.modal-body {
+    padding: var(--spacing-lg);
 }
 
-// 顯示餵食表單
-function showFeedingForm(editId = null) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+}
+
+/* =================================================
+   表單樣式
+   ================================================= */
+
+.form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-xs);
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: var(--font-sm);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: var(--font-md);
+    background: var(--surface-color);
+    color: var(--text-primary);
+    transition: all 0.3s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(255, 107, 157, 0.1);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.quantity-input {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.quantity-input input {
+    flex: 1;
+}
+
+.quantity-input select {
+    min-width: 80px;
+}
+
+/* =================================================
+   照片預覽
+   ================================================= */
+
+.photo-preview {
+    margin-top: var(--spacing-sm);
+    text-align: center;
+}
+
+.photo-preview img {
+    max-width: 200px;
+    max-height: 200px;
+    border-radius: var(--border-radius);
+    border: 2px solid var(--border-color);
+}
+
+/* =================================================
+   載入中覆蓋層
+   ================================================= */
+
+.loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.9);
+    z-index: 3000;
+    justify-content: center;
+    align-items: center;
+}
+
+.loading-overlay.show {
+    display: flex;
+}
+
+.loading-spinner {
+    text-align: center;
+    color: var(--primary-color);
+}
+
+.loading-spinner i {
+    font-size: var(--font-3xl);
+    margin-bottom: var(--spacing-md);
+}
+
+.loading-spinner p {
+    font-size: var(--font-lg);
+    font-weight: 500;
+}
+
+/* =================================================
+   響應式設計
+   ================================================= */
+
+/* 平板設備 */
+@media (max-width: 768px) {
+    .nav-container {
+        flex-direction: column;
+        gap: var(--spacing-md);
     }
     
-    editingRecordId = editId;
-    if (editId) {
-        loadFeedingForEdit(editId);
-    } else {
-        // 設置默認時間
-        document.getElementById('feedingTime').value = new Date().toISOString().slice(0, 16);
-    }
-    showModal('feedingModal');
-}
-
-// 載入編輯的餵食記錄
-async function loadFeedingForEdit(feedingId) {
-    try {
-        const feeding = await dbOperation('feeding', 'get', feedingId);
-        if (feeding) {
-            document.getElementById('feedingType').value = feeding.type;
-            toggleFeedingFields();
-            
-            if (feeding.type === 'breast') {
-                document.getElementById('feedingStartTime').value = 
-                    new Date(feeding.startTime).toISOString().slice(0, 16);
-                if (feeding.endTime) {
-                    document.getElementById('feedingEndTime').value = 
-                        new Date(feeding.endTime).toISOString().slice(0, 16);
-                }
-                document.getElementById('feedingSide').value = feeding.side || '';
-            } else {
-                document.getElementById('feedingAmount').value = feeding.amount || '';
-                document.getElementById('feedingUnit').value = feeding.unit || '';
-            }
-            
-            document.getElementById('feedingTime').value = 
-                new Date(feeding.timestamp).toISOString().slice(0, 16);
-            document.getElementById('feedingNotes').value = feeding.notes || '';
-        }
-    } catch (error) {
-        console.error('載入餵食記錄失敗:', error);
-        alert('載入記錄失敗，請重試。');
-    }
-}
-
-// 處理餵食表單提交
-async function handleFeedingSubmit(e) {
-    e.preventDefault();
-    
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .nav-controls {
+        width: 100%;
+        justify-content: space-between;
     }
     
-    try {
-        const type = document.getElementById('feedingType').value;
-        const formData = {
-            id: editingRecordId || generateId(),
-            childId: currentChild.id,
-            type: type,
-            timestamp: new Date(document.getElementById('feedingTime').value).getTime(),
-            notes: document.getElementById('feedingNotes').value || null,
-            createdAt: editingRecordId ? undefined : Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        if (type === 'breast') {
-            formData.startTime = new Date(document.getElementById('feedingStartTime').value).getTime();
-            const endTime = document.getElementById('feedingEndTime').value;
-            formData.endTime = endTime ? new Date(endTime).getTime() : null;
-            formData.side = document.getElementById('feedingSide').value || null;
-        } else {
-            formData.amount = parseFloat(document.getElementById('feedingAmount').value) || null;
-            formData.unit = document.getElementById('feedingUnit').value;
-        }
-        
-        await dbOperation('feeding', 'put', formData);
-        
-        closeModal('feedingModal');
-        await loadFeedingRecords();
-        showToast(editingRecordId ? '餵食記錄已更新' : '餵食記錄已新增');
-        
-    } catch (error) {
-        console.error('儲存餵食記錄失敗:', error);
-        alert('儲存失敗，請重試。');
-    }
-}
-
-// 載入餵食記錄
-async function loadFeedingRecords() {
-    if (!currentChild) {
-        document.getElementById('feedingList').innerHTML = '<p class="no-data">請先選擇孩子</p>';
-        return;
+    .child-selector {
+        flex: 1;
+        max-width: none;
     }
     
-    try {
-        const records = await dbOperation('feeding', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        
-        const activeFilter = document.querySelector('.filter-tab.active').dataset.filter;
-        const filteredRecords = activeFilter === 'all' ? 
-            records : records.filter(r => r.type === activeFilter);
-        
-        const sortedRecords = filteredRecords.sort((a, b) => b.timestamp - a.timestamp);
-        
-        const feedingList = document.getElementById('feedingList');
-        
-        if (sortedRecords.length === 0) {
-            feedingList.innerHTML = '<p class="no-data">暫無餵食記錄</p>';
-            return;
-        }
-        
-        feedingList.innerHTML = sortedRecords.map(record => {
-            let details = '';
-            let icon = 'fas fa-baby-bottle';
-            
-            if (record.type === 'breast') {
-                icon = 'fas fa-heart';
-                const duration = record.endTime ? 
-                    calculateDuration(record.startTime, record.endTime) : '進行中';
-                details = `
-                    <div class="record-detail">持續時間: ${duration}</div>
-                    ${record.side ? `<div class="record-detail">餵食側: ${record.side === 'left' ? '左側' : record.side === 'right' ? '右側' : '雙側'}</div>` : ''}
-                `;
-            } else {
-                const typeName = record.type === 'formula' ? '配方奶' : '副食品';
-                details = `
-                    <div class="record-detail">類型: ${typeName}</div>
-                    ${record.amount ? `<div class="record-detail">份量: ${record.amount}${record.unit}</div>` : ''}
-                `;
-            }
-            
-            return `
-                <div class="record-item">
-                    <div class="record-header">
-                        <div class="record-type">
-                            <i class="${icon}"></i>
-                            ${record.type === 'breast' ? '母乳餵食' : 
-                              record.type === 'formula' ? '配方奶' : '副食品'}
-                        </div>
-                        <div class="record-time">${formatDateTime(record.timestamp)}</div>
-                    </div>
-                    <div class="record-details">
-                        ${details}
-                    </div>
-                    ${record.notes ? `<div class="record-notes">${record.notes}</div>` : ''}
-                    <div class="record-actions">
-                        <button class="btn-icon" onclick="showFeedingForm('${record.id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="btn-icon delete" onclick="deleteFeedingRecord('${record.id}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-    } catch (error) {
-        console.error('載入餵食記錄失敗:', error);
-        document.getElementById('feedingList').innerHTML = '<p class="no-data">載入失敗</p>';
-    }
-}
-
-// 刪除餵食記錄
-function deleteFeedingRecord(recordId) {
-    document.getElementById('confirmMessage').textContent = '確定要刪除這筆餵食記錄嗎？';
-    document.getElementById('confirmDeleteBtn').onclick = async () => {
-        try {
-            await dbOperation('feeding', 'delete', recordId);
-            await loadFeedingRecords();
-            closeModal('confirmModal');
-            showToast('餵食記錄已刪除');
-        } catch (error) {
-            console.error('刪除餵食記錄失敗:', error);
-            alert('刪除失敗，請重試。');
-        }
-    };
-    showModal('confirmModal');
-}
-
-// 睡眠記錄相關函數
-function showSleepForm(editId = null) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .main-nav {
+        top: 120px;
     }
     
-    editingRecordId = editId;
-    if (editId) {
-        loadSleepForEdit(editId);
-    } else {
-        // 設置默認開始時間
-        document.getElementById('sleepStartTime').value = new Date().toISOString().slice(0, 16);
-    }
-    showModal('sleepModal');
-}
-
-async function loadSleepForEdit(sleepId) {
-    try {
-        const sleep = await dbOperation('sleep', 'get', sleepId);
-        if (sleep) {
-            document.getElementById('sleepStartTime').value = 
-                new Date(sleep.startTime).toISOString().slice(0, 16);
-            if (sleep.endTime) {
-                document.getElementById('sleepEndTime').value = 
-                    new Date(sleep.endTime).toISOString().slice(0, 16);
-            }
-            document.getElementById('sleepQuality').value = sleep.quality || '';
-            document.getElementById('sleepNotes').value = sleep.notes || '';
-        }
-    } catch (error) {
-        console.error('載入睡眠記錄失敗:', error);
-        alert('載入記錄失敗，請重試。');
-    }
-}
-
-async function handleSleepSubmit(e) {
-    e.preventDefault();
-    
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .nav-tab span {
+        display: none;
     }
     
-    try {
-        const startTime = new Date(document.getElementById('sleepStartTime').value).getTime();
-        const endTimeValue = document.getElementById('sleepEndTime').value;
-        const endTime = endTimeValue ? new Date(endTimeValue).getTime() : null;
-        
-        const formData = {
-            id: editingRecordId || generateId(),
-            childId: currentChild.id,
-            startTime: startTime,
-            endTime: endTime,
-            quality: document.getElementById('sleepQuality').value || null,
-            notes: document.getElementById('sleepNotes').value || null,
-            createdAt: editingRecordId ? undefined : Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        await dbOperation('sleep', 'put', formData);
-        
-        closeModal('sleepModal');
-        await loadSleepRecords();
-        showToast(editingRecordId ? '睡眠記錄已更新' : '睡眠記錄已新增');
-        
-    } catch (error) {
-        console.error('儲存睡眠記錄失敗:', error);
-        alert('儲存失敗，請重試。');
-    }
-}
-
-async function loadSleepRecords() {
-    if (!currentChild) {
-        document.getElementById('sleepList').innerHTML = '<p class="no-data">請先選擇孩子</p>';
-        return;
+    .nav-tab {
+        padding: var(--spacing-md) var(--spacing-sm);
     }
     
-    try {
-        const records = await dbOperation('sleep', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        
-        const sortedRecords = records.sort((a, b) => b.startTime - a.startTime);
-        
-        const sleepList = document.getElementById('sleepList');
-        
-        if (sortedRecords.length === 0) {
-            sleepList.innerHTML = '<p class="no-data">暫無睡眠記錄</p>';
-            return;
-        }
-        
-        sleepList.innerHTML = sortedRecords.map(record => {
-            const duration = record.endTime ? 
-                calculateDuration(record.startTime, record.endTime) : '進行中';
-            const qualityText = record.quality ? 
-                { excellent: '非常好', good: '良好', fair: '普通', poor: '不佳' }[record.quality] : '';
-            
-            return `
-                <div class="record-item">
-                    <div class="record-header">
-                        <div class="record-type">
-                            <i class="fas fa-bed"></i>
-                            睡眠記錄
-                        </div>
-                        <div class="record-time">${formatDateTime(record.startTime)}</div>
-                    </div>
-                    <div class="record-details">
-                        <div class="record-detail">開始: ${formatDateTime(record.startTime)}</div>
-                        ${record.endTime ? `<div class="record-detail">結束: ${formatDateTime(record.endTime)}</div>` : ''}
-                        <div class="record-detail">持續時間: ${duration}</div>
-                        ${qualityText ? `<div class="record-detail">睡眠品質: ${qualityText}</div>` : ''}
-                    </div>
-                    ${record.notes ? `<div class="record-notes">${record.notes}</div>` : ''}
-                    <div class="record-actions">
-                        <button class="btn-icon" onclick="showSleepForm('${record.id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="btn-icon delete" onclick="deleteSleepRecord('${record.id}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-    } catch (error) {
-        console.error('載入睡眠記錄失敗:', error);
-        document.getElementById('sleepList').innerHTML = '<p class="no-data">載入失敗</p>';
-    }
-}
-
-function deleteSleepRecord(recordId) {
-    document.getElementById('confirmMessage').textContent = '確定要刪除這筆睡眠記錄嗎？';
-    document.getElementById('confirmDeleteBtn').onclick = async () => {
-        try {
-            await dbOperation('sleep', 'delete', recordId);
-            await loadSleepRecords();
-            closeModal('confirmModal');
-            showToast('睡眠記錄已刪除');
-        } catch (error) {
-            console.error('刪除睡眠記錄失敗:', error);
-            alert('刪除失敗，請重試。');
-        }
-    };
-    showModal('confirmModal');
-}
-
-// 尿布記錄相關函數
-function showDiaperForm(editId = null) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .page-header {
+        flex-direction: column;
+        gap: var(--spacing-md);
+        align-items: stretch;
     }
     
-    editingRecordId = editId;
-    if (editId) {
-        loadDiaperForEdit(editId);
-    } else {
-        // 設置默認時間
-        document.getElementById('diaperTime').value = new Date().toISOString().slice(0, 16);
-    }
-    showModal('diaperModal');
-}
-
-async function loadDiaperForEdit(diaperId) {
-    try {
-        const diaper = await dbOperation('diaper', 'get', diaperId);
-        if (diaper) {
-            document.getElementById('diaperType').value = diaper.type;
-            document.getElementById('diaperTime').value = 
-                new Date(diaper.timestamp).toISOString().slice(0, 16);
-            document.getElementById('diaperNotes').value = diaper.notes || '';
-        }
-    } catch (error) {
-        console.error('載入尿布記錄失敗:', error);
-        alert('載入記錄失敗，請重試。');
-    }
-}
-
-async function handleDiaperSubmit(e) {
-    e.preventDefault();
-    
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .stats-controls {
+        flex-direction: column;
+        align-items: stretch;
     }
     
-    try {
-        const formData = {
-            id: editingRecordId || generateId(),
-            childId: currentChild.id,
-            type: document.getElementById('diaperType').value,
-            timestamp: new Date(document.getElementById('diaperTime').value).getTime(),
-            notes: document.getElementById('diaperNotes').value || null,
-            createdAt: editingRecordId ? undefined : Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        await dbOperation('diaper', 'put', formData);
-        
-        closeModal('diaperModal');
-        await loadDiaperRecords();
-        showToast(editingRecordId ? '尿布記錄已更新' : '尿布記錄已新增');
-        
-    } catch (error) {
-        console.error('儲存尿布記錄失敗:', error);
-        alert('儲存失敗，請重試。');
-    }
-}
-
-async function loadDiaperRecords() {
-    if (!currentChild) {
-        document.getElementById('diaperList').innerHTML = '<p class="no-data">請先選擇孩子</p>';
-        return;
+    .export-buttons {
+        justify-content: center;
     }
     
-    try {
-        const records = await dbOperation('diaper', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        
-        const sortedRecords = records.sort((a, b) => b.timestamp - a.timestamp);
-        
-        const diaperList = document.getElementById('diaperList');
-        
-        if (sortedRecords.length === 0) {
-            diaperList.innerHTML = '<p class="no-data">暫無尿布記錄</p>';
-            return;
-        }
-        
-        diaperList.innerHTML = sortedRecords.map(record => {
-            const typeNames = {
-                wet: '尿濕',
-                soiled: '排便',
-                both: '尿濕+排便'
-            };
-            const icons = {
-                wet: 'fas fa-tint',
-                soiled: 'fas fa-poop',
-                both: 'fas fa-baby-carriage'
-            };
-            
-            return `
-                <div class="record-item">
-                    <div class="record-header">
-                        <div class="record-type">
-                            <i class="${icons[record.type] || 'fas fa-baby-carriage'}"></i>
-                            尿布更換 - ${typeNames[record.type] || record.type}
-                        </div>
-                        <div class="record-time">${formatDateTime(record.timestamp)}</div>
-                    </div>
-                    ${record.notes ? `<div class="record-notes">${record.notes}</div>` : ''}
-                    <div class="record-actions">
-                        <button class="btn-icon" onclick="showDiaperForm('${record.id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="btn-icon delete" onclick="deleteDiaperRecord('${record.id}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-    } catch (error) {
-        console.error('載入尿布記錄失敗:', error);
-        document.getElementById('diaperList').innerHTML = '<p class="no-data">載入失敗</p>';
-    }
-}
-
-function deleteDiaperRecord(recordId) {
-    document.getElementById('confirmMessage').textContent = '確定要刪除這筆尿布記錄嗎？';
-    document.getElementById('confirmDeleteBtn').onclick = async () => {
-        try {
-            await dbOperation('diaper', 'delete', recordId);
-            await loadDiaperRecords();
-            closeModal('confirmModal');
-            showToast('尿布記錄已刪除');
-        } catch (error) {
-            console.error('刪除尿布記錄失敗:', error);
-            alert('刪除失敗，請重試。');
-        }
-    };
-    showModal('confirmModal');
-}
-
-// 健康記錄相關函數
-function showHealthForm(editId = null) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .children-list {
+        grid-template-columns: 1fr;
     }
     
-    editingRecordId = editId;
-    if (editId) {
-        loadHealthForEdit(editId);
-    } else {
-        // 設置默認日期
-        document.getElementById('healthDate').value = new Date().toISOString().split('T')[0];
-    }
-    showModal('healthModal');
-}
-
-async function loadHealthForEdit(healthId) {
-    try {
-        const health = await dbOperation('health', 'get', healthId);
-        if (health) {
-            document.getElementById('healthCategory').value = health.category;
-            toggleHealthFields();
-            document.getElementById('healthDate').value = health.date;
-            document.getElementById('healthTitle').value = health.title;
-            document.getElementById('healthDescription').value = health.description || '';
-            document.getElementById('healthNotes').value = health.notes || '';
-            
-            if (health.category === 'temperature') {
-                document.getElementById('temperature').value = health.temperature || '';
-                document.getElementById('temperatureMethod').value = health.temperatureMethod || 'oral';
-            }
-        }
-    } catch (error) {
-        console.error('載入健康記錄失敗:', error);
-        alert('載入記錄失敗，請重試。');
-    }
-}
-
-async function handleHealthSubmit(e) {
-    e.preventDefault();
-    
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
     
-    try {
-        const category = document.getElementById('healthCategory').value;
-        const formData = {
-            id: editingRecordId || generateId(),
-            childId: currentChild.id,
-            category: category,
-            date: document.getElementById('healthDate').value,
-            title: document.getElementById('healthTitle').value,
-            description: document.getElementById('healthDescription').value || null,
-            notes: document.getElementById('healthNotes').value || null,
-            createdAt: editingRecordId ? undefined : Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        if (category === 'temperature') {
-            formData.temperature = parseFloat(document.getElementById('temperature').value) || null;
-            formData.temperatureMethod = document.getElementById('temperatureMethod').value;
-        }
-        
-        await dbOperation('health', 'put', formData);
-        
-        closeModal('healthModal');
-        await loadHealthRecords();
-        showToast(editingRecordId ? '健康記錄已更新' : '健康記錄已新增');
-        
-    } catch (error) {
-        console.error('儲存健康記錄失敗:', error);
-        alert('儲存失敗，請重試。');
-    }
-}
-
-async function loadHealthRecords() {
-    if (!currentChild) {
-        document.getElementById('healthList').innerHTML = '<p class="no-data">請先選擇孩子</p>';
-        return;
+    .quick-buttons {
+        grid-template-columns: repeat(2, 1fr);
     }
     
-    try {
-        const records = await dbOperation('health', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        
-        const activeCategory = document.querySelector('.health-tab.active').dataset.category;
-        const filteredRecords = records.filter(r => r.category === activeCategory);
-        const sortedRecords = filteredRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
-        
-        const healthList = document.getElementById('healthList');
-        
-        if (sortedRecords.length === 0) {
-            healthList.innerHTML = '<p class="no-data">暫無此類別的記錄</p>';
-            return;
-        }
-        
-        const categoryNames = {
-            vaccine: '疫苗接種',
-            medicine: '用藥記錄',
-            checkup: '體檢記錄',
-            illness: '疾病記錄',
-            temperature: '體溫記錄'
-        };
-        
-        const categoryIcons = {
-            vaccine: 'fas fa-syringe',
-            medicine: 'fas fa-pills',
-            checkup: 'fas fa-stethoscope',
-            illness: 'fas fa-thermometer-half',
-            temperature: 'fas fa-temperature-high'
-        };
-        
-        healthList.innerHTML = sortedRecords.map(record => {
-            let details = `<div class="record-detail">日期: ${formatDate(record.date)}</div>`;
-            
-            if (record.category === 'temperature') {
-                details += record.temperature ? `<div class="record-detail">體溫: ${record.temperature}°C</div>` : '';
-                details += record.temperatureMethod ? `<div class="record-detail">測量方式: ${
-                    {oral: '口溫', rectal: '肛溫', axillary: '腋溫', ear: '耳溫', forehead: '額溫'}[record.temperatureMethod]
-                }</div>` : '';
-            }
-            
-            return `
-                <div class="record-item">
-                    <div class="record-header">
-                        <div class="record-type">
-                            <i class="${categoryIcons[record.category]}"></i>
-                            ${categoryNames[record.category]} - ${record.title}
-                        </div>
-                        <div class="record-time">${formatDate(record.date)}</div>
-                    </div>
-                    <div class="record-details">
-                        ${details}
-                    </div>
-                    ${record.description ? `<div class="record-content">${record.description}</div>` : ''}
-                    ${record.notes ? `<div class="record-notes">${record.notes}</div>` : ''}
-                    <div class="record-actions">
-                        <button class="btn-icon" onclick="showHealthForm('${record.id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="btn-icon delete" onclick="deleteHealthRecord('${record.id}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-    } catch (error) {
-        console.error('載入健康記錄失敗:', error);
-        document.getElementById('healthList').innerHTML = '<p class="no-data">載入失敗</p>';
-    }
-}
-
-function deleteHealthRecord(recordId) {
-    document.getElementById('confirmMessage').textContent = '確定要刪除這筆健康記錄嗎？';
-    document.getElementById('confirmDeleteBtn').onclick = async () => {
-        try {
-            await dbOperation('health', 'delete', recordId);
-            await loadHealthRecords();
-            closeModal('confirmModal');
-            showToast('健康記錄已刪除');
-        } catch (error) {
-            console.error('刪除健康記錄失敗:', error);
-            alert('刪除失敗，請重試。');
-        }
-    };
-    showModal('confirmModal');
-}
-
-// 里程碑相關函數
-async function initDefaultMilestones() {
-    try {
-        const children = await dbOperation('children', 'getAll');
-        
-        for (const child of children) {
-            // 檢查是否已經初始化過預設里程碑
-            const existingMilestones = await dbOperation('milestones', 'getByIndex', {
-                indexName: 'childId',
-                value: child.id
-            });
-            
-            if (existingMilestones.length === 0) {
-                // 為每個類別添加預設里程碑
-                for (const [category, milestones] of Object.entries(defaultMilestones)) {
-                    for (const milestone of milestones) {
-                        const milestoneData = {
-                            id: generateId(),
-                            childId: child.id,
-                            category: category,
-                            title: milestone.title,
-                            description: milestone.description,
-                            ageMonths: milestone.ageMonths,
-                            isDefault: true,
-                            achieved: false,
-                            achievedDate: null,
-                            notes: null,
-                            createdAt: Date.now()
-                        };
-                        await dbOperation('milestones', 'add', milestoneData);
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('初始化預設里程碑失敗:', error);
-    }
-}
-
-function showMilestoneForm(editId = null) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .category-tabs {
+        justify-content: center;
     }
     
-    const modal = document.getElementById('milestoneModal');
-    const title = document.getElementById('milestoneModalTitle');
-    
-    if (editId) {
-        title.textContent = '編輯里程碑';
-        editingRecordId = editId;
-        loadMilestoneForEdit(editId);
-    } else {
-        title.textContent = '新增自定義里程碑';
-        editingRecordId = null;
-        document.getElementById('milestoneCategory').value = 'custom';
-    }
-    
-    showModal('milestoneModal');
-}
-
-async function loadMilestoneForEdit(milestoneId) {
-    try {
-        const milestone = await dbOperation('milestones', 'get', milestoneId);
-        if (milestone) {
-            document.getElementById('milestoneCategory').value = milestone.category;
-            document.getElementById('milestoneTitle').value = milestone.title;
-            document.getElementById('milestoneDate').value = milestone.achievedDate ? 
-                new Date(milestone.achievedDate).toISOString().split('T')[0] : '';
-            document.getElementById('milestoneNotes').value = milestone.notes || '';
-        }
-    } catch (error) {
-        console.error('載入里程碑失敗:', error);
-        alert('載入記錄失敗，請重試。');
+    .modal-content {
+        margin: var(--spacing-md);
+        width: calc(100% - 2rem);
     }
 }
 
-async function handleMilestoneSubmit(e) {
-    e.preventDefault();
-    
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+/* 手機設備 */
+@media (max-width: 480px) {
+    .main-content {
+        padding: var(--spacing-md);
     }
     
-    try {
-        const achievedDateValue = document.getElementById('milestoneDate').value;
-        const formData = {
-            id: editingRecordId || generateId(),
-            childId: currentChild.id,
-            category: document.getElementById('milestoneCategory').value,
-            title: document.getElementById('milestoneTitle').value,
-            achieved: !!achievedDateValue,
-            achievedDate: achievedDateValue ? new Date(achievedDateValue).getTime() : null,
-            notes: document.getElementById('milestoneNotes').value || null,
-            isDefault: false,
-            createdAt: editingRecordId ? undefined : Date.now(),
-            updatedAt: Date.now()
-        };
-        
-        if (editingRecordId) {
-            // 保留原有的其他屬性
-            const existing = await dbOperation('milestones', 'get', editingRecordId);
-            formData.isDefault = existing.isDefault;
-            formData.ageMonths = existing.ageMonths;
-            formData.description = existing.description;
-        }
-        
-        await dbOperation('milestones', 'put', formData);
-        
-        closeModal('milestoneModal');
-        await loadMilestones();
-        showToast(editingRecordId ? '里程碑已更新' : '里程碑已新增');
-        
-    } catch (error) {
-        console.error('儲存里程碑失敗:', error);
-        alert('儲存失敗，請重試。');
-    }
-}
-
-async function loadMilestones() {
-    if (!currentChild) {
-        document.getElementById('milestoneList').innerHTML = '<p class="no-data">請先選擇孩子</p>';
-        return;
+    .header {
+        padding: var(--spacing-sm) var(--spacing-md);
     }
     
-    try {
-        const records = await dbOperation('milestones', 'getByIndex', {
-            indexName: 'childId',
-            value: currentChild.id
-        });
-        
-        const activeCategory = document.querySelector('.category-tab.active').dataset.category;
-        const filteredRecords = records.filter(r => r.category === activeCategory);
-        
-        // 按年齡月數排序，自定義里程碑按創建時間排序
-        const sortedRecords = filteredRecords.sort((a, b) => {
-            if (a.isDefault && b.isDefault) {
-                return (a.ageMonths || 0) - (b.ageMonths || 0);
-            } else if (a.isDefault) {
-                return -1;
-            } else if (b.isDefault) {
-                return 1;
-            } else {
-                return b.createdAt - a.createdAt;
-            }
-        });
-        
-        const milestoneList = document.getElementById('milestoneList');
-        
-        if (sortedRecords.length === 0) {
-            milestoneList.innerHTML = '<p class="no-data">暫無此類別的里程碑</p>';
-            return;
-        }
-        
-        const categoryNames = {
-            motor: '運動發展',
-            language: '語言發展',
-            social: '社交發展',
-            cognitive: '認知發展',
-            selfcare: '自理能力',
-            custom: '自定義'
-        };
-        
-        milestoneList.innerHTML = sortedRecords.map(record => {
-            const ageText = record.ageMonths !== undefined ? `${record.ageMonths}個月` : '';
-            
-            return `
-                <div class="milestone-item ${record.achieved ? 'achieved' : ''}">
-                    <div class="milestone-header">
-                        <div class="milestone-title">${record.title}</div>
-                        ${record.achieved && record.achievedDate ? 
-                            `<div class="milestone-date">達成於 ${formatDate(record.achievedDate)}</div>` : 
-                            ageText ? `<div class="milestone-date">${ageText}</div>` : ''}
-                    </div>
-                    <div class="milestone-category">${categoryNames[record.category]}</div>
-                    ${record.description ? `<div class="record-content">${record.description}</div>` : ''}
-                    ${record.notes ? `<div class="record-notes">${record.notes}</div>` : ''}
-                    <div class="milestone-actions">
-                        ${!record.achieved ? `
-                            <button class="btn-achieve" onclick="achieveMilestone('${record.id}')">
-                                <i class="fas fa-check"></i> 標記達成
-                            </button>
-                        ` : ''}
-                        ${!record.isDefault ? `
-                            <button class="btn-icon" onclick="showMilestoneForm('${record.id}')">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="btn-icon delete" onclick="deleteMilestone('${record.id}')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        ` : `
-                            <button class="btn-icon" onclick="showMilestoneForm('${record.id}')">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                        `}
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-    } catch (error) {
-        console.error('載入里程碑失敗:', error);
-        document.getElementById('milestoneList').innerHTML = '<p class="no-data">載入失敗</p>';
-    }
-}
-
-async function achieveMilestone(milestoneId) {
-    try {
-        const milestone = await dbOperation('milestones', 'get', milestoneId);
-        milestone.achieved = true;
-        milestone.achievedDate = Date.now();
-        milestone.updatedAt = Date.now();
-        
-        await dbOperation('milestones', 'put', milestone);
-        await loadMilestones();
-        showToast('里程碑已標記為達成！');
-    } catch (error) {
-        console.error('標記里程碑失敗:', error);
-        alert('操作失敗，請重試。');
-    }
-}
-
-function deleteMilestone(milestoneId) {
-    document.getElementById('confirmMessage').textContent = '確定要刪除這個里程碑嗎？';
-    document.getElementById('confirmDeleteBtn').onclick = async () => {
-        try {
-            await dbOperation('milestones', 'delete', milestoneId);
-            await loadMilestones();
-            closeModal('confirmModal');
-            showToast('里程碑已刪除');
-        } catch (error) {
-            console.error('刪除里程碑失敗:', error);
-            alert('刪除失敗，請重試。');
-        }
-    };
-    showModal('confirmModal');
-}
-
-// 活動記錄相關函數
-function quickActivity(type) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .header h1 {
+        font-size: var(--font-xl);
     }
     
-    // 預填表單並顯示
-    showActivityForm();
-    document.getElementById('activityType').value = type;
-    toggleActivityFields();
-}
-
-function showActivityForm(editId = null) {
-    if (!currentChild) {
-        alert('請先選擇孩子');
-        return;
+    .summary-grid {
+        grid-template-columns: 1fr;
     }
     
-    editingRecordId = editId;
-    if (editId) {
-        loadActivityForEdit(editId);
-    } else {
-        // 設置默認時間
-        document.getElementById('activityTime').value = new Date().toISOString().slice(0, 16);
+    .stats-grid {
+        grid-template-columns: 1fr;
     }
-    showModal('activityModal');
+    
+    .record-actions {
+        position: static;
+        margin-top: var(--spacing-md);
+        justify-content: flex-end;
+    }
+    
+    .child-actions {
+        flex-direction: column;
+    }
+    
+    .nav-tabs {
+        padding: 0 var(--spacing-xs);
+    }
+    
+    .nav-tab {
+        min-width: 60px;
+    }
 }
 
-async function loadActivityForEdit(activityId) {
-    try {
-        const activity = await dbOperation('activities', 'get', activityId);
-        if (activity) {
-            document.getElementById('activityType').value = activity.type;
-            toggleActivityFields();
-            document.getElementById('activityTime').value = 
-                new Date(activity.timestamp).toISOString().slice(0, 16);
-            document.getElementById('activityDuration').value = activity.duration || '';
-            document.getElementById('activityNotes').value = activity.notes ||
+/* =================================================
+   輔助類別
+   ================================================= */
+
+.text-center {
+    text-align: center;
+}
+
+.text-left {
+    text-align: left;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.text-primary {
+    color: var(--primary-color);
+}
+
+.text-success {
+    color: var(--success-color);
+}
+
+.text-warning {
+    color: var(--warning-color);
+}
+
+.text-error {
+    color: var(--error-color);
+}
+
+.mb-0 {
+    margin-bottom: 0;
+}
+
+.mb-sm {
+    margin-bottom: var(--spacing-sm);
+}
+
+.mb-md {
+    margin-bottom: var(--spacing-md);
+}
+
+.mb-lg {
+    margin-bottom: var(--spacing-lg);
+}
+
+.d-none {
+    display: none;
+}
+
+.d-block {
+    display: block;
+}
+
+.d-flex {
+    display: flex;
+}
+
+.align-items-center {
+    align-items: center;
+}
+
+.justify-content-center {
+    justify-content: center;
+}
+
+.justify-content-between {
+    justify-content: space-between;
+}
+
+.flex-1 {
+    flex: 1;
+}
+
+/* =================================================
+   動畫效果
+   ================================================= */
+
+.fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.slide-in-left {
+    animation: slideInLeft 0.3s ease-out;
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.bounce-in {
+    animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* =================================================
+   自訂滾動條
+   ================================================= */
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--surface-secondary);
+    border-radius: var(--border-radius-sm);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--text-muted);
+    border-radius: var(--border-radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+/* =================================================
+   打印樣式
+   ================================================= */
+
+@media print {
+    .header,
+    .main-nav,
+    .btn,
+    .modal,
+    .loading-overlay {
+        display: none !important;
+    }
+    
+    .main-content {
+        max-width: none;
+        padding: 0;
+    }
+    
+    .card {
+        box-shadow: none;
+        border: 1px solid #ccc;
+        page-break-inside: avoid;
+    }
+    
+    body {
+        background: white;
+        color: black;
+    }
+}
