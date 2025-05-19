@@ -498,9 +498,9 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-// 資料庫初始化 - 修正版本
+// 資料庫初始化 - 增強版本
 function initDB() {
-    console.log('初始化資料庫...');
+    console.log('開始初始化資料庫...');
     
     if (typeof indexedDB === 'undefined') {
         console.error('瀏覽器不支援 IndexedDB');
@@ -509,75 +509,126 @@ function initDB() {
         return;
     }
     
+    console.log('IndexedDB 支援檢查通過，創建資料庫...');
+    
     // 直接創建資料庫，不刪除舊的
-    createNewDatabase();
+    try {
+        createNewDatabase();
+    } catch (error) {
+        console.error('創建資料庫時發生異常:', error);
+        showToast('資料庫創建失敗', 'error');
+        // 即使失敗也要顯示UI
+        showEmptyState();
+    }
 }
 
 function createNewDatabase() {
-    console.log('開始創建資料庫...');
+    console.log('執行 createNewDatabase 函數...');
     
-    const request = indexedDB.open('BabyTrackerDB', 1);
-    
-    request.onerror = function(event) {
-        console.error('資料庫開啟失敗:', event.target.error);
-        showToast('資料庫初始化失敗', 'error');
-        // 即使資料庫失敗也顯示UI
-        showEmptyState();
-    };
-    
-    request.onblocked = function(event) {
-        console.warn('資料庫被阻擋，可能有其他標籤頁在使用');
-        showToast('資料庫被其他頁面佔用，請關閉其他標籤頁', 'warning');
-    };
-    
-    request.onupgradeneeded = function(event) {
-        console.log('開始升級/創建資料庫表...');
-        db = event.target.result;
+    try {
+        const request = indexedDB.open('BabyTrackerDB', 1);
+        console.log('IndexedDB.open 請求已發送...');
         
-        try {
-            // 創建孩子資料表
-            if (!db.objectStoreNames.contains('children')) {
-                const childrenStore = db.createObjectStore('children', { keyPath: 'id', autoIncrement: true });
-                childrenStore.createIndex('name', 'name', { unique: false });
-                console.log('✓ children表已創建');
-            }
-            
-            // 創建其他記錄表
-            const recordTypes = ['feeding', 'sleep', 'diaper', 'health', 'milestones', 'interactions', 'activities'];
-            recordTypes.forEach(type => {
-                if (!db.objectStoreNames.contains(type)) {
-                    const store = db.createObjectStore(type, { keyPath: 'id', autoIncrement: true });
-                    store.createIndex('childId', 'childId', { unique: false });
-                    store.createIndex('dateTime', 'dateTime', { unique: false });
-                    console.log(`✓ ${type}表已創建`);
-                }
-            });
-            
-            console.log('✓ 所有資料庫表創建完成');
-            
-        } catch (error) {
-            console.error('創建資料庫表時發生錯誤:', error);
-            showToast('資料庫表創建失敗', 'error');
-        }
-    };
-    
-    request.onsuccess = function(event) {
-        db = event.target.result;
-        console.log('✓ 資料庫成功連接');
-        window.db = db; // 讓除錯工具可以存取
-        
-        // 設定資料庫錯誤處理
-        db.onerror = function(event) {
-            console.error('資料庫錯誤:', event.target.error);
+        request.onerror = function(event) {
+            console.error('資料庫開啟失敗:', event.target.error);
+            console.error('錯誤詳細:', event.target.errorCode);
+            showToast('資料庫初始化失敗', 'error');
+            // 即使資料庫失敗也顯示UI
+            setTimeout(() => {
+                showEmptyState();
+                hideLoadingScreen();
+            }, 100);
         };
         
-        // 確保在資料庫完全初始化後再執行其他操作
+        request.onblocked = function(event) {
+            console.warn('資料庫被阻擋，可能有其他標籤頁在使用');
+            showToast('資料庫被其他頁面佔用，請關閉其他標籤頁', 'warning');
+        };
+        
+        request.onupgradeneeded = function(event) {
+            console.log('觸發 onupgradeneeded 事件...');
+            db = event.target.result;
+            console.log('資料庫物件已獲得:', db.name, db.version);
+            
+            try {
+                // 創建孩子資料表
+                if (!db.objectStoreNames.contains('children')) {
+                    console.log('創建 children 表...');
+                    const childrenStore = db.createObjectStore('children', { keyPath: 'id', autoIncrement: true });
+                    childrenStore.createIndex('name', 'name', { unique: false });
+                    console.log('✓ children表已創建');
+                } else {
+                    console.log('children表已存在');
+                }
+                
+                // 創建其他記錄表
+                const recordTypes = ['feeding', 'sleep', 'diaper', 'health', 'milestones', 'interactions', 'activities'];
+                recordTypes.forEach(type => {
+                    if (!db.objectStoreNames.contains(type)) {
+                        console.log(`創建 ${type} 表...`);
+                        const store = db.createObjectStore(type, { keyPath: 'id', autoIncrement: true });
+                        store.createIndex('childId', 'childId', { unique: false });
+                        store.createIndex('dateTime', 'dateTime', { unique: false });
+                        console.log(`✓ ${type}表已創建`);
+                    } else {
+                        console.log(`${type}表已存在`);
+                    }
+                });
+                
+                console.log('✓ 所有資料庫表創建/檢查完成');
+                
+            } catch (error) {
+                console.error('創建資料庫表時發生錯誤:', error);
+                showToast('資料庫表創建失敗', 'error');
+            }
+        };
+        
+        request.onsuccess = function(event) {
+            console.log('觸發 onsuccess 事件...');
+            db = event.target.result;
+            console.log('✓ 資料庫成功連接');
+            console.log('資料庫名稱:', db.name);
+            console.log('資料庫版本:', db.version);
+            console.log('可用表:', Array.from(db.objectStoreNames));
+            
+            window.db = db; // 讓除錯工具可以存取
+            
+            // 設定資料庫錯誤處理
+            db.onerror = function(event) {
+                console.error('資料庫操作錯誤:', event.target.error);
+            };
+            
+            db.onversionchange = function(event) {
+                console.warn('資料庫版本變更，建議重新載入頁面');
+                db.close();
+            };
+            
+            // 確保在資料庫完全初始化後再執行其他操作
+            console.log('準備載入資料...');
+            setTimeout(() => {
+                console.log('開始載入資料...');
+                loadChildren();
+                hideLoadingScreen();
+                showToast('應用已就緒', 'success');
+            }, 100);
+        };
+        
+        // 如果5秒內沒有響應，顯示錯誤
         setTimeout(() => {
-            console.log('開始載入資料...');
-            loadChildren();
-            hideLoadingScreen();
-        }, 100);
-    };
+            if (!db) {
+                console.error('資料庫初始化超時');
+                showToast('資料庫初始化超時，使用無資料庫模式', 'warning');
+                showEmptyState();
+                hideLoadingScreen();
+            }
+        }, 5000);
+        
+    } catch (error) {
+        console.error('IndexedDB.open 發生異常:', error);
+        showToast('資料庫系統錯誤', 'error');
+        showEmptyState();
+        hideLoadingScreen();
+    }
 }
 
 // 載入孩子列表 - 修正版本
@@ -1105,6 +1156,76 @@ window.debugCommands = {
         deleteRequest.onerror = function(error) {
             console.error('刪除資料庫失敗:', error);
         };
+    },
+    
+    // 新增：立即測試資料庫支援
+    checkIndexedDB: function() {
+        console.log('=== IndexedDB 支援檢查 ===');
+        console.log('indexedDB 物件:', typeof indexedDB);
+        console.log('IDBDatabase:', typeof IDBDatabase);
+        console.log('IDBObjectStore:', typeof IDBObjectStore);
+        console.log('IDBTransaction:', typeof IDBTransaction);
+        
+        if (typeof indexedDB === 'undefined') {
+            console.error('❌ 瀏覽器不支援 IndexedDB');
+            return false;
+        }
+        
+        console.log('✅ IndexedDB 基本支援正常');
+        
+        // 測試簡單的資料庫操作
+        try {
+            const testRequest = indexedDB.open('TestDB', 1);
+            console.log('測試請求已發送...');
+            
+            testRequest.onsuccess = function() {
+                console.log('✅ IndexedDB 測試成功');
+                testRequest.result.close();
+                indexedDB.deleteDatabase('TestDB');
+            };
+            
+            testRequest.onerror = function(error) {
+                console.error('❌ IndexedDB 測試失敗:', error);
+            };
+        } catch (error) {
+            console.error('❌ IndexedDB 測試異常:', error);
+        }
+        
+        return true;
+    },
+    
+    // 新增：模擬資料庫模式
+    simulateData: function() {
+        console.log('模擬新增孩子資料...');
+        
+        // 創建模擬孩子數據
+        const mockChild = {
+            id: 1,
+            name: '測試寶寶',
+            birthDate: '2024-01-01',
+            gender: 'boy',
+            createdAt: new Date().toISOString()
+        };
+        
+        // 直接設定到全域變數
+        window.currentChild = mockChild;
+        
+        // 更新界面
+        const select = document.getElementById('childSelect');
+        if (select) {
+            select.innerHTML = `
+                <option value="">請選擇孩子</option>
+                <option value="1" selected>測試寶寶</option>
+            `;
+        }
+        
+        // 顯示儀表板
+        if (window.showDashboard) {
+            showDashboard();
+        }
+        
+        console.log('✅ 模擬資料已載入');
+        console.log('當前孩子:', window.currentChild);
     }
 };
 
