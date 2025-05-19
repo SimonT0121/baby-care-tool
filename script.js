@@ -1,394 +1,339 @@
-// =======================
-// 嬰幼兒照顧追蹤應用 - 核心邏輯
-// 設計原則：認知負擔最小化、錯誤預防優先
-// =======================
+// 嬰幼兒照顧追蹤應用 - 主要JavaScript檔案
+// 版本: 1.0.0
+// 作者: AI Assistant
+// 最後更新: 2025
 
-class BabyTracker {
+// 全域應用狀態
+const APP_STATE = {
+    currentChild: null,
+    currentSection: 'dashboard',
+    theme: 'light',
+    isLoading: false,
+    charts: {}
+};
+
+// 資料庫管理類別
+class BabyTrackerDB {
     constructor() {
+        this.dbName = 'BabyTrackerDB';
+        this.version = 1;
         this.db = null;
-        this.currentBaby = null;
-        this.chart = null;
-        this.initializeApp();
     }
 
-    // 初始化應用
-    async initializeApp() {
-        try {
-            // 初始化資料庫
-            await this.initDatabase();
-            
-            // 綁定事件監聽器
-            this.bindEventListeners();
-            
-            // 初始化介面
-            this.initializeUI();
-            
-            // 載入寶寶列表
-            await this.loadBabies();
-            
-            // 隱藏載入畫面
-            this.hideLoadingScreen();
-            
-            // 初始化PWA功能
-            this.initializePWA();
-            
-            // 處理URL參數（支援快捷方式）
-            this.handleURLParams();
-            
-        } catch (error) {
-            console.error('應用初始化失敗:', error);
-            this.showToast('應用初始化失敗', 'error');
-        }
-    }
-
-    // 初始化IndexedDB
-    async initDatabase() {
+    // 初始化資料庫
+    async init() {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open('BabyTrackerDB', 1);
-            
+            const request = indexedDB.open(this.dbName, this.version);
+
             request.onerror = () => reject(request.error);
+
             request.onsuccess = () => {
                 this.db = request.result;
-                resolve();
+                resolve(this.db);
             };
-            
+
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                
-                // 建立寶寶資料表
-                if (!db.objectStoreNames.contains('babies')) {
-                    const babiesStore = db.createObjectStore('babies', { keyPath: 'id', autoIncrement: true });
-                    babiesStore.createIndex('name', 'name', { unique: false });
-                    babiesStore.createIndex('birthdate', 'birthdate', { unique: false });
+
+                // 創建孩子資料表
+                if (!db.objectStoreNames.contains('children')) {
+                    const childrenStore = db.createObjectStore('children', { keyPath: 'id', autoIncrement: true });
+                    childrenStore.createIndex('name', 'name', { unique: false });
                 }
-                
-                // 建立記錄資料表
+
+                // 創建記錄資料表
                 if (!db.objectStoreNames.contains('records')) {
                     const recordsStore = db.createObjectStore('records', { keyPath: 'id', autoIncrement: true });
-                    recordsStore.createIndex('babyId', 'babyId', { unique: false });
+                    recordsStore.createIndex('childId', 'childId', { unique: false });
                     recordsStore.createIndex('type', 'type', { unique: false });
-                    recordsStore.createIndex('datetime', 'datetime', { unique: false });
+                    recordsStore.createIndex('date', 'date', { unique: false });
                 }
-                
-                // 建立里程碑資料表
+
+                // 創建里程碑資料表
                 if (!db.objectStoreNames.contains('milestones')) {
                     const milestonesStore = db.createObjectStore('milestones', { keyPath: 'id', autoIncrement: true });
-                    milestonesStore.createIndex('babyId', 'babyId', { unique: false });
+                    milestonesStore.createIndex('childId', 'childId', { unique: false });
                     milestonesStore.createIndex('category', 'category', { unique: false });
-                    milestonesStore.createIndex('date', 'date', { unique: false });
                 }
-                
-                // 建立記憶資料表
+
+                // 創建記憶資料表
                 if (!db.objectStoreNames.contains('memories')) {
                     const memoriesStore = db.createObjectStore('memories', { keyPath: 'id', autoIncrement: true });
-                    memoriesStore.createIndex('babyId', 'babyId', { unique: false });
+                    memoriesStore.createIndex('childId', 'childId', { unique: false });
                     memoriesStore.createIndex('type', 'type', { unique: false });
-                    memoriesStore.createIndex('date', 'date', { unique: false });
+                }
+
+                // 創建設定資料表
+                if (!db.objectStoreNames.contains('settings')) {
+                    db.createObjectStore('settings', { keyPath: 'key' });
                 }
             };
         });
     }
 
-    // 綁定事件監聽器
-    bindEventListeners() {
-        // 頁籤切換
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab));
-        });
+    // 通用資料庫操作方法
+    async add(storeName, data) {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        return store.add(data);
+    }
 
-        // 寶寶選擇器
-        const babySelector = document.getElementById('baby-selector-btn');
-        if (babySelector) {
-            babySelector.addEventListener('click', () => this.toggleBabyDropdown());
-        }
+    async get(storeName, key) {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        return store.get(key);
+    }
 
-        // 新增寶寶
-        const addBabyBtn = document.getElementById('add-baby-btn');
-        if (addBabyBtn) {
-            addBabyBtn.addEventListener('click', () => this.openBabyModal());
-        }
+    async getAll(storeName) {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        return store.getAll();
+    }
 
-        const editBabyBtn = document.getElementById('edit-baby-btn');
-        if (editBabyBtn) {
-            editBabyBtn.addEventListener('click', () => this.openBabyModal(this.currentBaby));
-        }
+    async update(storeName, data) {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        return store.put(data);
+    }
 
-        // 記錄分類
-        document.querySelectorAll('.category-card').forEach(card => {
-            card.addEventListener('click', (e) => this.openRecordModal(e.currentTarget.dataset.category));
-        });
+    async delete(storeName, key) {
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        return store.delete(key);
+    }
 
-        // 快速行動按鈕
-        const quickActionBtn = document.getElementById('quick-action-btn');
-        if (quickActionBtn) {
-            quickActionBtn.addEventListener('click', () => this.openQuickActions());
-        }
+    // 根據索引查詢
+    async getByIndex(storeName, indexName, value) {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const index = store.index(indexName);
+        return index.getAll(value);
+    }
+}
 
-        // 模態框關閉
-        document.querySelectorAll('.modal-close').forEach(closeBtn => {
-            closeBtn.addEventListener('click', (e) => this.closeModal(e.target.closest('.modal')));
-        });
+// 主應用類別
+class BabyTrackerApp {
+    constructor() {
+        this.db = new BabyTrackerDB();
+        this.currentChild = null;
+        this.init();
+    }
 
-        // 模態框背景點擊關閉
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) this.closeModal(modal);
-            });
-        });
+    // 應用初始化
+    async init() {
+        try {
+            // 顯示載入畫面
+            this.showLoading();
 
-        // 表單提交
-        const babyForm = document.getElementById('baby-form');
-        if (babyForm) {
-            babyForm.addEventListener('submit', (e) => this.saveBaby(e));
-        }
+            // 初始化資料庫
+            await this.db.init();
 
-        const milestoneForm = document.getElementById('milestone-form');
-        if (milestoneForm) {
-            milestoneForm.addEventListener('submit', (e) => this.saveMilestone(e));
-        }
+            // 載入設定
+            await this.loadSettings();
 
-        const memoryForm = document.getElementById('memory-form');
-        if (memoryForm) {
-            memoryForm.addEventListener('submit', (e) => this.saveMemory(e));
-        }
+            // 載入孩子列表
+            await this.loadChildren();
 
-        // 照片上傳
-        const photoUploadBtn = document.getElementById('photo-upload-btn');
-        if (photoUploadBtn) {
-            photoUploadBtn.addEventListener('click', () => {
-                document.getElementById('baby-photo-input').click();
-            });
-        }
+            // 初始化事件監聽器
+            this.initEventListeners();
 
-        const babyPhotoInput = document.getElementById('baby-photo-input');
-        if (babyPhotoInput) {
-            babyPhotoInput.addEventListener('change', (e) => this.handlePhotoUpload(e));
-        }
+            // 初始化圖表
+            this.initCharts();
 
-        // 設定
-        const settingsBtn = document.getElementById('settings-btn');
-        if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => this.openSettingsModal());
-        }
+            // 隱藏載入畫面
+            this.hideLoading();
 
-        const themeToggle = document.getElementById('theme-toggle');
-        if (themeToggle) {
-            themeToggle.addEventListener('click', () => this.toggleTheme());
-        }
+            // 顯示歡迎訊息
+            this.showToast('歡迎使用寶貝成長記錄！', 'success');
 
-        const exportBtn = document.getElementById('export-data-btn');
-        if (exportBtn) {
-            exportBtn.addEventListener('click', () => this.exportData());
-        }
-
-        const importData = document.getElementById('import-data');
-        if (importData) {
-            importData.addEventListener('change', (e) => this.importData(e));
-        }
-
-        // 里程碑和記憶相關按鈕
-        const addMilestoneBtn = document.getElementById('add-milestone-btn');
-        if (addMilestoneBtn) {
-            addMilestoneBtn.addEventListener('click', () => this.openMilestoneModal());
-        }
-
-        const addMemoryBtn = document.getElementById('add-memory-btn');
-        if (addMemoryBtn) {
-            addMemoryBtn.addEventListener('click', () => this.openMemoryModal());
-        }
-
-        // 圖表頁籤
-        document.querySelectorAll('.chart-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => this.switchChart(e.target.dataset.chart));
-        });
-
-        // 里程碑分類頁籤
-        document.querySelectorAll('.milestone-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => this.filterMilestones(e.target.dataset.category));
-        });
-
-        // 記憶篩選
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.filterMemories(e.target.dataset.filter));
-        });
-
-        // ESC鍵關閉模態框
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                const openModal = document.querySelector('.modal.show');
-                if (openModal) this.closeModal(openModal);
-            }
-        });
-
-        // 點擊外部關閉下拉選單
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.baby-selector')) {
-                const dropdown = document.getElementById('baby-dropdown');
-                if (dropdown) {
-                    dropdown.classList.remove('show');
-                }
-            }
-        });
-
-        // 儲存記錄按鈕
-        const saveRecordBtn = document.getElementById('save-record-btn');
-        if (saveRecordBtn) {
-            saveRecordBtn.addEventListener('click', () => this.saveRecord());
-        }
-
-        // 主題設定變更
-        const themeSetting = document.getElementById('theme-setting');
-        if (themeSetting) {
-            themeSetting.addEventListener('change', (e) => {
-                const theme = e.target.value;
-                this.applyTheme(theme);
-                localStorage.setItem('baby-tracker-theme', theme);
-            });
+        } catch (error) {
+            console.error('應用初始化失敗:', error);
+            this.showToast('應用載入失敗，請重新整理頁面', 'error');
         }
     }
 
-    // 初始化UI
-    initializeUI() {
-        // 設定預設主題
-        const savedTheme = localStorage.getItem('baby-tracker-theme') || 'auto';
-        this.applyTheme(savedTheme);
-        
-        const themeSetting = document.getElementById('theme-setting');
-        if (themeSetting) {
-            themeSetting.value = savedTheme;
-        }
-
-        // 設定今天的日期為預設值
-        const today = new Date().toISOString().split('T')[0];
-        const dateInputs = [
-            'baby-birthdate',
-            'milestone-date',
-            'memory-date'
-        ];
-
-        dateInputs.forEach(id => {
-            const input = document.getElementById(id);
-            if (input) {
-                input.value = today;
-            }
-        });
-
-        // 初始化圖表
-        this.initializeChart();
+    // 顯示載入畫面
+    showLoading() {
+        const loadingScreen = document.getElementById('loadingScreen');
+        const app = document.getElementById('app');
+        loadingScreen.style.display = 'flex';
+        app.style.display = 'none';
+        APP_STATE.isLoading = true;
     }
 
     // 隱藏載入畫面
-    hideLoadingScreen() {
-        const loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen) {
-            loadingScreen.classList.add('hidden');
-            setTimeout(() => {
-                loadingScreen.style.display = 'none';
-            }, 300);
-        }
+    hideLoading() {
+        const loadingScreen = document.getElementById('loadingScreen');
+        const app = document.getElementById('app');
+        loadingScreen.style.display = 'none';
+        app.style.display = 'flex';
+        APP_STATE.isLoading = false;
     }
 
-    // 初始化PWA
-    initializePWA() {
-        // 註冊Service Worker
-        if ('serviceWorker' in navigator) {
-            const swContent = `
-                const CACHE_NAME = 'baby-tracker-v1';
-                const urlsToCache = [
-                    '/',
-                    '/style.css',
-                    '/script.js',
-                    'https://cdn.jsdelivr.net/npm/chart.js'
-                ];
+    // 初始化事件監聽器
+    initEventListeners() {
+        // 主題切換
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            this.toggleTheme();
+        });
 
-                self.addEventListener('install', event => {
-                    event.waitUntil(
-                        caches.open(CACHE_NAME)
-                            .then(cache => cache.addAll(urlsToCache))
-                    );
-                });
+        // 設定按鈕
+        document.getElementById('settingsBtn').addEventListener('click', () => {
+            this.openModal('settingsModal');
+        });
 
-                self.addEventListener('fetch', event => {
-                    event.respondWith(
-                        caches.match(event.request)
-                            .then(response => {
-                                if (response) {
-                                    return response;
-                                }
-                                return fetch(event.request);
-                            })
-                    );
-                });
-            `;
-            
-            navigator.serviceWorker.register(
-                URL.createObjectURL(new Blob([swContent], { type: 'application/javascript' }))
-            ).catch(error => {
-                console.log('Service Worker 註冊失敗:', error);
+        // 新增孩子按鈕
+        document.getElementById('addChildBtn').addEventListener('click', () => {
+            this.openModal('addChildModal');
+        });
+
+        // 導航切換
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const section = e.currentTarget.dataset.section;
+                this.switchSection(section);
             });
-        }
+        });
 
-        // 處理安裝提示
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            const installBtn = document.createElement('button');
-            installBtn.textContent = '安裝應用';
-            installBtn.className = 'primary-btn';
-            installBtn.addEventListener('click', () => {
-                e.prompt();
-                installBtn.remove();
+        // 記錄分類切換
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const category = e.currentTarget.dataset.category;
+                this.switchRecordCategory(category);
             });
-            const headerActions = document.querySelector('.header-actions');
-            if (headerActions) {
-                headerActions.appendChild(installBtn);
+        });
+
+        // 浮動操作按鈕
+        this.initFAB();
+
+        // 模態視窗相關
+        this.initModals();
+
+        // 表單提交
+        this.initForms();
+
+        // 快速操作按鈕
+        this.initQuickActions();
+
+        // 里程碑相關
+        this.initMilestones();
+
+        // 記憶相關
+        this.initMemories();
+
+        // 設定相關
+        this.initSettings();
+
+        // 檔案上傳預覽
+        this.initFilePreview();
+
+        // 餵食類型切換
+        this.initFeedingTypeSwitch();
+
+        // 睡眠類型切換
+        this.initSleepTypeSwitch();
+
+        // 健康類型切換
+        this.initHealthTypeSwitch();
+
+        // 排泄類型切換
+        this.initDiaperTypeSwitch();
+    }
+
+    // 初始化浮動操作按鈕
+    initFAB() {
+        const fabMain = document.getElementById('quickRecordFab');
+        const fabMenu = document.querySelector('.fab-menu');
+        
+        fabMain.addEventListener('click', () => {
+            fabMain.classList.toggle('open');
+            fabMenu.classList.toggle('open');
+        });
+
+        // 點擊其他地方關閉FAB
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.fab-container')) {
+                fabMain.classList.remove('open');
+                fabMenu.classList.remove('open');
             }
         });
+
+        // FAB選項點擊
+        document.querySelectorAll('.fab-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const action = e.currentTarget.dataset.action;
+                this.quickRecord(action);
+                fabMain.classList.remove('open');
+                fabMenu.classList.remove('open');
+            });
+        });
     }
 
-    // 處理URL參數
-    handleURLParams() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const quick = urlParams.get('quick');
-        const tab = urlParams.get('tab');
+    // 快速記錄
+    quickRecord(type) {
+        this.switchSection('record');
+        this.switchRecordCategory(type);
+    }
 
-        if (quick && this.currentBaby) {
-            // 延遲執行以確保UI已載入
-            setTimeout(() => {
-                this.openRecordModal(quick);
-            }, 500);
-        }
+    // 初始化模態視窗
+    initModals() {
+        // 模態關閉按鈕
+        document.querySelectorAll('.modal-close, .modal-cancel').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const modal = e.target.closest('.modal');
+                this.closeModal(modal.id);
+            });
+        });
 
-        if (tab) {
-            this.switchTab(tab);
+        // 點擊背景關閉模態
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    this.closeModal(modal.id);
+                }
+            });
+        });
+    }
+
+    // 開啟模態視窗
+    openModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    // 關閉模態視窗
+    closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.classList.remove('active');
+        document.body.style.overflow = 'auto';
+        
+        // 重置表單
+        const form = modal.querySelector('form');
+        if (form) {
+            form.reset();
+            this.clearPhotoPreview(modal);
         }
     }
 
-    // 切換頁籤
-    switchTab(tabName) {
+    // 切換分頁
+    switchSection(sectionName) {
         // 更新導航狀態
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.classList.remove('active');
-            tab.setAttribute('aria-selected', 'false');
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.classList.remove('active');
         });
-        
-        const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
-        if (activeTab) {
-            activeTab.classList.add('active');
-            activeTab.setAttribute('aria-selected', 'true');
-        }
+        document.querySelector(`[data-section="${sectionName}"]`).classList.add('active');
 
-        // 切換內容
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.remove('active');
+        // 更新內容區域
+        document.querySelectorAll('.content-section').forEach(section => {
+            section.classList.remove('active');
         });
-        
-        const activeContent = document.getElementById(`${tabName}-tab`);
-        if (activeContent) {
-            activeContent.classList.add('active');
-        }
+        document.getElementById(sectionName).classList.add('active');
 
-        // 載入對應數據
-        switch (tabName) {
+        APP_STATE.currentSection = sectionName;
+
+        // 載入對應內容
+        switch (sectionName) {
             case 'dashboard':
                 this.loadDashboard();
                 break;
@@ -401,134 +346,125 @@ class BabyTracker {
         }
     }
 
-    // 切換寶寶下拉選單
-    toggleBabyDropdown() {
-        const dropdown = document.getElementById('baby-dropdown');
-        const isOpen = dropdown.classList.contains('show');
+    // 切換記錄分類
+    switchRecordCategory(category) {
+        // 更新分類按鈕狀態
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-category="${category}"]`).classList.add('active');
+
+        // 更新表單顯示
+        document.querySelectorAll('.record-form').forEach(form => {
+            form.classList.remove('active');
+        });
+        document.getElementById(`${category}Form`).classList.add('active');
+
+        // 設置當前時間
+        this.setCurrentDateTime(category);
+    }
+
+    // 設置當前時間
+    setCurrentDateTime(category) {
+        const now = new Date();
+        const dateTimeString = now.toISOString().slice(0, 16);
         
-        dropdown.classList.toggle('show');
-        const selectorBtn = document.getElementById('baby-selector-btn');
-        if (selectorBtn) {
-            selectorBtn.setAttribute('aria-expanded', !isOpen);
+        const timeInputs = {
+            feeding: '#feedingTime',
+            sleep: '#sleepStartTime',
+            diaper: '#diaperTime',
+            mood: '#moodTime',
+            activity: '#activityTime',
+            health: '#healthTime'
+        };
+
+        const timeInput = document.querySelector(timeInputs[category]);
+        if (timeInput) {
+            timeInput.value = dateTimeString;
         }
     }
 
-    // 載入寶寶列表
-    async loadBabies() {
+    // 載入設定
+    async loadSettings() {
         try {
-            const babies = await this.getAllBabies();
-            const babyList = document.getElementById('baby-list');
-            if (!babyList) return;
+            const settings = await this.db.getAll('settings');
+            
+            settings.forEach(setting => {
+                switch (setting.key) {
+                    case 'theme':
+                        this.setTheme(setting.value);
+                        break;
+                    case 'notifications':
+                        document.getElementById('notificationsToggle').checked = setting.value;
+                        break;
+                }
+            });
+        } catch (error) {
+            console.error('載入設定失敗:', error);
+        }
+    }
 
-            babyList.innerHTML = '';
+    // 載入孩子列表
+    async loadChildren() {
+        try {
+            const children = await this.db.getAll('children');
+            const childList = document.getElementById('childList');
+            
+            childList.innerHTML = '';
 
-            if (babies.length === 0) {
-                babyList.innerHTML = '<div class="empty-state"><p>尚未新增寶寶</p></div>';
-                return;
-            }
-
-            babies.forEach(baby => {
-                const babyItem = this.createBabyItem(baby);
-                babyList.appendChild(babyItem);
+            children.forEach(child => {
+                const childCard = this.createChildCard(child);
+                childList.appendChild(childCard);
             });
 
-            // 自動選擇第一個寶寶或最後使用的寶寶
-            const lastBabyId = localStorage.getItem('baby-tracker-current-baby');
-            const targetBaby = lastBabyId ? 
-                babies.find(b => b.id === parseInt(lastBabyId)) || babies[0] : 
-                babies[0];
-            
-            if (targetBaby) {
-                this.selectBaby(targetBaby);
+            // 如果有孩子，選擇第一個
+            if (children.length > 0 && !this.currentChild) {
+                this.selectChild(children[0]);
             }
         } catch (error) {
-            console.error('載入寶寶列表失敗:', error);
-            this.showToast('載入寶寶列表失敗', 'error');
+            console.error('載入孩子列表失敗:', error);
         }
     }
 
-    // 建立寶寶項目元素
-    createBabyItem(baby) {
-        const item = document.createElement('div');
-        item.className = 'baby-item';
-        item.addEventListener('click', () => this.selectBaby(baby));
+    // 創建孩子卡片
+    createChildCard(child) {
+        const div = document.createElement('div');
+        div.className = 'child-card';
+        div.dataset.childId = child.id;
 
-        const avatar = document.createElement('div');
-        avatar.className = 'baby-item-avatar';
-        
-        if (baby.photo) {
-            const img = document.createElement('img');
-            img.src = baby.photo;
-            img.alt = baby.name;
-            avatar.appendChild(img);
-        } else {
-            avatar.textContent = baby.gender === 'female' ? '👧' : '👶';
-        }
+        const age = this.calculateAge(child.birthdate);
+        const avatar = child.photo ? 
+            `<img src="${child.photo}" alt="${child.name}">` : 
+            this.getGenderEmoji(child.gender);
 
-        const name = document.createElement('div');
-        name.className = 'baby-item-name';
-        name.textContent = baby.name;
+        div.innerHTML = `
+            <div class="child-avatar">${avatar}</div>
+            <div class="child-name">${child.name}</div>
+            <div class="child-age">${age}</div>
+        `;
 
-        item.appendChild(avatar);
-        item.appendChild(name);
+        div.addEventListener('click', () => {
+            this.selectChild(child);
+        });
 
-        return item;
+        return div;
     }
 
-    // 選擇寶寶
-    selectBaby(baby) {
-        this.currentBaby = baby;
-        localStorage.setItem('baby-tracker-current-baby', baby.id);
+    // 選擇孩子
+    selectChild(child) {
+        // 更新當前孩子
+        this.currentChild = child;
+        APP_STATE.currentChild = child;
 
-        // 更新UI
-        this.updateCurrentBabyDisplay();
-        this.toggleBabyDropdown();
-        this.loadDashboard();
+        // 更新UI狀態
+        document.querySelectorAll('.child-card').forEach(card => {
+            card.classList.remove('active');
+        });
+        document.querySelector(`[data-child-id="${child.id}"]`).classList.add('active');
 
-        this.showToast(`已選擇 ${baby.name}`, 'success');
-    }
-
-    // 更新當前寶寶顯示
-    updateCurrentBabyDisplay() {
-        if (!this.currentBaby) return;
-
-        const baby = this.currentBaby;
-        
-        // 更新標頭
-        const currentBabyName = document.getElementById('current-baby-name');
-        if (currentBabyName) {
-            currentBabyName.textContent = baby.name;
-        }
-        
-        // 更新寶寶卡片
-        const babyDisplayName = document.getElementById('baby-display-name');
-        if (babyDisplayName) {
-            babyDisplayName.textContent = baby.name;
-        }
-
-        const babyAge = document.getElementById('baby-age');
-        if (babyAge) {
-            babyAge.textContent = this.calculateAge(baby.birthdate);
-        }
-        
-        // 更新照片
-        const photoElement = document.getElementById('baby-photo');
-        const placeholderElement = document.getElementById('baby-placeholder');
-        
-        if (baby.photo && photoElement && placeholderElement) {
-            photoElement.src = baby.photo;
-            photoElement.style.display = 'block';
-            placeholderElement.style.display = 'none';
-        } else if (photoElement && placeholderElement) {
-            photoElement.style.display = 'none';
-            placeholderElement.style.display = 'flex';
-            placeholderElement.textContent = baby.gender === 'female' ? '👧' : '👶';
-        }
-        
-        // 顯示編輯按鈕
-        const editBtn = document.getElementById('edit-baby-btn');
-        if (editBtn) {
-            editBtn.style.display = 'block';
+        // 重新載入相關內容
+        if (APP_STATE.currentSection === 'dashboard') {
+            this.loadDashboard();
         }
     }
 
@@ -536,746 +472,234 @@ class BabyTracker {
     calculateAge(birthdate) {
         const birth = new Date(birthdate);
         const now = new Date();
-        const diffTime = Math.abs(now - birth);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        if (diffDays < 30) {
-            return `${diffDays} 天`;
-        } else if (diffDays < 365) {
-            const months = Math.floor(diffDays / 30);
-            const days = diffDays % 30;
-            return days > 0 ? `${months} 個月 ${days} 天` : `${months} 個月`;
+        const ageInMs = now - birth;
+        const ageInDays = Math.floor(ageInMs / (1000 * 60 * 60 * 24));
+
+        if (ageInDays < 30) {
+            return `${ageInDays}天`;
+        } else if (ageInDays < 365) {
+            const months = Math.floor(ageInDays / 30);
+            const days = ageInDays % 30;
+            return days > 0 ? `${months}個月${days}天` : `${months}個月`;
         } else {
-            const years = Math.floor(diffDays / 365);
-            const months = Math.floor((diffDays % 365) / 30);
-            return months > 0 ? `${years} 歲 ${months} 個月` : `${years} 歲`;
+            const years = Math.floor(ageInDays / 365);
+            const months = Math.floor((ageInDays % 365) / 30);
+            return months > 0 ? `${years}歲${months}個月` : `${years}歲`;
         }
     }
 
-    // 開啟寶寶模態框
-    openBabyModal(baby = null) {
-        const modal = document.getElementById('baby-modal');
-        const title = document.getElementById('baby-modal-title');
-        const form = document.getElementById('baby-form');
-        
-        if (!modal || !title || !form) return;
-        
-        if (baby) {
-            title.textContent = '編輯寶寶資料';
-            this.populateBabyForm(baby);
-            form.dataset.editId = baby.id;
-        } else {
-            title.textContent = '新增寶寶';
-            form.reset();
-            this.resetPhotoPreview();
-            delete form.dataset.editId;
-        }
-        
-        this.showModal(modal);
-    }
-
-    // 填入寶寶表單
-    populateBabyForm(baby) {
-        const fields = [
-            { id: 'baby-name', value: baby.name || '' },
-            { id: 'baby-gender', value: baby.gender || '' },
-            { id: 'baby-birthdate', value: baby.birthdate || '' },
-            { id: 'baby-notes', value: baby.notes || '' }
-        ];
-
-        fields.forEach(field => {
-            const element = document.getElementById(field.id);
-            if (element) {
-                element.value = field.value;
-            }
-        });
-        
-        if (baby.photo) {
-            const preview = document.getElementById('photo-preview');
-            if (preview) {
-                preview.innerHTML = `<img src="${baby.photo}" alt="寶寶照片">`;
-            }
+    // 獲取性別表情符號
+    getGenderEmoji(gender) {
+        switch (gender) {
+            case 'male': return '👦';
+            case 'female': return '👧';
+            default: return '👶';
         }
     }
 
-    // 重置照片預覽
-    resetPhotoPreview() {
-        const preview = document.getElementById('photo-preview');
-        if (preview) {
-            preview.innerHTML = '<span class="photo-placeholder">👶</span>';
-        }
+    // 主題切換
+    toggleTheme() {
+        const currentTheme = document.documentElement.dataset.theme || 'light';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        this.setTheme(newTheme);
+        this.saveSettings();
     }
 
-    // 處理照片上傳
-    handlePhotoUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        // 檔案大小檢查 (最大 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            this.showToast('照片檔案過大，請選擇小於 5MB 的照片', 'error');
-            return;
-        }
-
-        // 檔案類型檢查
-        if (!file.type.startsWith('image/')) {
-            this.showToast('請選擇有效的圖片檔案', 'error');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const preview = document.getElementById('photo-preview');
-            if (preview) {
-                preview.innerHTML = `<img src="${e.target.result}" alt="寶寶照片">`;
-            }
-        };
-        reader.readAsDataURL(file);
-    }
-
-    // 儲存寶寶
-    async saveBaby(event) {
-        event.preventDefault();
+    // 設置主題
+    setTheme(theme) {
+        document.documentElement.dataset.theme = theme;
+        APP_STATE.theme = theme;
         
+        const themeIcon = document.querySelector('.theme-icon');
+        themeIcon.textContent = theme === 'light' ? '🌙' : '☀️';
+        
+        document.getElementById('darkModeToggle').checked = theme === 'dark';
+    }
+
+    // 儲存設定
+    async saveSettings() {
         try {
-            const form = event.target;
-            const formData = new FormData(form);
-            
-            const baby = {
-                name: formData.get('baby-name') || document.getElementById('baby-name').value,
-                gender: formData.get('baby-gender') || document.getElementById('baby-gender').value,
-                birthdate: formData.get('baby-birthdate') || document.getElementById('baby-birthdate').value,
-                notes: formData.get('baby-notes') || document.getElementById('baby-notes').value,
-                createdAt: new Date().toISOString()
-            };
-
-            // 驗證必填欄位
-            if (!baby.name || !baby.birthdate) {
-                this.showToast('請填寫必填欄位', 'error');
-                return;
-            }
-
-            // 處理照片
-            const photoPreview = document.querySelector('#photo-preview img');
-            if (photoPreview) {
-                baby.photo = photoPreview.src;
-            }
-
-            // 如果是編輯模式，保留ID
-            if (form.dataset.editId) {
-                baby.id = parseInt(form.dataset.editId);
-            }
-
-            await this.saveBabyToDb(baby);
-            
-            this.closeModal(document.getElementById('baby-modal'));
-            await this.loadBabies();
-            this.showToast('寶寶資料已儲存', 'success');
+            await this.db.update('settings', { key: 'theme', value: APP_STATE.theme });
+            await this.db.update('settings', { key: 'notifications', value: document.getElementById('notificationsToggle').checked });
         } catch (error) {
-            console.error('儲存寶寶失敗:', error);
-            this.showToast('儲存失敗，請重試', 'error');
+            console.error('儲存設定失敗:', error);
         }
-    }
-
-    // 開啟記錄模態框
-    openRecordModal(category) {
-        const modal = document.getElementById('record-modal');
-        const title = document.getElementById('record-modal-title');
-        const body = document.getElementById('record-modal-body');
-
-        if (!modal || !title || !body) return;
-
-        if (!this.currentBaby) {
-            this.showToast('請先選擇寶寶', 'warning');
-            return;
-        }
-
-        title.textContent = this.getRecordTitle(category);
-        body.innerHTML = this.getRecordForm(category);
-        
-        // 設定當前時間為預設值
-        const timeInput = body.querySelector('input[type="datetime-local"]');
-        if (timeInput) {
-            timeInput.value = this.getCurrentDateTime();
-        }
-
-        this.showModal(modal);
-        modal.dataset.category = category;
-    }
-
-    // 取得記錄標題
-    getRecordTitle(category) {
-        const titles = {
-            feeding: '餵食記錄',
-            sleep: '睡眠記錄',
-            diaper: '排泄記錄',
-            growth: '成長記錄',
-            health: '健康記錄',
-            activity: '活動記錄',
-            mood: '情緒記錄',
-            note: '自由記錄'
-        };
-        return titles[category] || '新增記錄';
-    }
-
-    // 產生記錄表單
-    getRecordForm(category) {
-        const commonFields = `
-            <div class="form-group">
-                <label for="record-datetime">時間 *</label>
-                <input type="datetime-local" id="record-datetime" required>
-            </div>
-        `;
-
-        const forms = {
-            feeding: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="feeding-type">餵食類型 *</label>
-                    <select id="feeding-type" required>
-                        <option value="">選擇類型</option>
-                        <option value="breast">母乳</option>
-                        <option value="formula">配方奶</option>
-                        <option value="solids">副食品</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="feeding-amount">份量</label>
-                    <input type="number" id="feeding-amount" placeholder="ml 或 g">
-                </div>
-                <div class="form-group">
-                    <label for="feeding-duration">持續時間（分鐘）</label>
-                    <input type="number" id="feeding-duration" min="1">
-                </div>
-                <div class="form-group">
-                    <label for="feeding-notes">備註</label>
-                    <textarea id="feeding-notes" rows="3"></textarea>
-                </div>
-            `,
-            sleep: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="sleep-type">睡眠類型 *</label>
-                    <select id="sleep-type" required>
-                        <option value="">選擇類型</option>
-                        <option value="night">夜間睡眠</option>
-                        <option value="nap">白天小睡</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="sleep-duration">持續時間（分鐘）</label>
-                    <input type="number" id="sleep-duration" min="1">
-                </div>
-                <div class="form-group">
-                    <label for="sleep-quality">睡眠品質</label>
-                    <select id="sleep-quality">
-                        <option value="">選擇品質</option>
-                        <option value="excellent">非常好</option>
-                        <option value="good">良好</option>
-                        <option value="fair">普通</option>
-                        <option value="poor">不佳</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="sleep-notes">備註</label>
-                    <textarea id="sleep-notes" rows="3"></textarea>
-                </div>
-            `,
-            diaper: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="diaper-type">類型 *</label>
-                    <select id="diaper-type" required>
-                        <option value="">選擇類型</option>
-                        <option value="wet">尿濕</option>
-                        <option value="soiled">排便</option>
-                        <option value="both">兩者都有</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="diaper-notes">備註</label>
-                    <textarea id="diaper-notes" rows="3"></textarea>
-                </div>
-            `,
-            growth: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="growth-weight">體重（公斤）</label>
-                    <input type="number" id="growth-weight" step="0.1" min="0">
-                </div>
-                <div class="form-group">
-                    <label for="growth-height">身高（公分）</label>
-                    <input type="number" id="growth-height" step="0.1" min="0">
-                </div>
-                <div class="form-group">
-                    <label for="growth-head">頭圍（公分）</label>
-                    <input type="number" id="growth-head" step="0.1" min="0">
-                </div>
-                <div class="form-group">
-                    <label for="growth-notes">備註</label>
-                    <textarea id="growth-notes" rows="3"></textarea>
-                </div>
-            `,
-            health: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="health-type">健康類型 *</label>
-                    <select id="health-type" required>
-                        <option value="">選擇類型</option>
-                        <option value="temperature">體溫</option>
-                        <option value="medicine">用藥</option>
-                        <option value="symptoms">症狀</option>
-                        <option value="checkup">健檢</option>
-                        <option value="vaccine">疫苗</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="health-value">數值/描述</label>
-                    <input type="text" id="health-value" placeholder="例如：37.5°C 或 症狀描述">
-                </div>
-                <div class="form-group">
-                    <label for="health-notes">詳細記錄</label>
-                    <textarea id="health-notes" rows="3"></textarea>
-                </div>
-            `,
-            activity: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="activity-type">活動類型 *</label>
-                    <select id="activity-type" required>
-                        <option value="">選擇類型</option>
-                        <option value="tummy">趴睡練習</option>
-                        <option value="play">遊戲時間</option>
-                        <option value="reading">親子共讀</option>
-                        <option value="music">音樂互動</option>
-                        <option value="walk">散步/外出</option>
-                        <option value="massage">按摩</option>
-                        <option value="bath">洗澡</option>
-                        <option value="other">其他</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="activity-duration">持續時間（分鐘）</label>
-                    <input type="number" id="activity-duration" min="1">
-                </div>
-                <div class="form-group">
-                    <label for="activity-notes">活動描述</label>
-                    <textarea id="activity-notes" rows="3"></textarea>
-                </div>
-            `,
-            mood: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="mood-emotion">情緒狀態 *</label>
-                    <select id="mood-emotion" required>
-                        <option value="">選擇情緒</option>
-                        <option value="happy">😊 開心愉悅</option>
-                        <option value="calm">😌 平靜滿足</option>
-                        <option value="excited">🤩 興奮好奇</option>
-                        <option value="fussy">😕 不安焦慮</option>
-                        <option value="cranky">😣 煩躁易怒</option>
-                        <option value="crying">😭 大哭不適</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="mood-behavior">行為狀態</label>
-                    <select id="mood-behavior">
-                        <option value="">選擇行為</option>
-                        <option value="sleeping">😴 睡眠狀態</option>
-                        <option value="feeding">🍼 進食狀態</option>
-                        <option value="alert">🎯 專注狀態</option>
-                        <option value="exploring">🔍 探索狀態</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="mood-notes">情況描述</label>
-                    <textarea id="mood-notes" rows="3" placeholder="記錄當時的情況和可能的原因..."></textarea>
-                </div>
-            `,
-            note: `
-                ${commonFields}
-                <div class="form-group">
-                    <label for="note-title">標題 *</label>
-                    <input type="text" id="note-title" required placeholder="為這個記錄取個標題">
-                </div>
-                <div class="form-group">
-                    <label for="note-content">內容 *</label>
-                    <textarea id="note-content" rows="5" required placeholder="記錄任何想要保存的時刻..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="note-tags">標籤（用逗號分隔）</label>
-                    <input type="text" id="note-tags" placeholder="例如：第一次,可愛,特別">
-                </div>
-            `
-        };
-
-        // 為所有表單添加照片上傳欄位
-        const photoField = `
-            <div class="form-group">
-                <label for="record-photo">照片</label>
-                <input type="file" id="record-photo" accept="image/*">
-            </div>
-        `;
-
-        return (forms[category] || forms.note) + photoField;
-    }
-
-    // 取得當前日期時間
-    getCurrentDateTime() {
-        const now = new Date();
-        const offset = now.getTimezoneOffset() * 60000;
-        const localTime = new Date(now.getTime() - offset);
-        return localTime.toISOString().slice(0, 16);
-    }
-
-    // 儲存記錄
-    async saveRecord() {
-        try {
-            const modal = document.getElementById('record-modal');
-            const category = modal.dataset.category;
-            const datetimeInput = document.getElementById('record-datetime');
-            const datetime = datetimeInput ? datetimeInput.value : null;
-
-            if (!datetime) {
-                this.showToast('請選擇時間', 'error');
-                return;
-            }
-
-            const record = {
-                babyId: this.currentBaby.id,
-                type: category,
-                datetime: datetime,
-                data: this.extractRecordData(category),
-                createdAt: new Date().toISOString()
-            };
-
-            // 處理照片
-            const photoInput = document.getElementById('record-photo');
-            if (photoInput && photoInput.files[0]) {
-                record.photo = await this.convertFileToBase64(photoInput.files[0]);
-            }
-
-            await this.saveRecordToDb(record);
-            
-            this.closeModal(modal);
-            this.loadDashboard();
-            this.showToast('記錄已儲存', 'success');
-        } catch (error) {
-            console.error('儲存記錄失敗:', error);
-            this.showToast('儲存失敗，請重試', 'error');
-        }
-    }
-
-    // 提取記錄數據
-    extractRecordData(category) {
-        const data = {};
-        
-        // 根據記錄類型提取不同的數據
-        switch (category) {
-            case 'feeding':
-                data.type = this.getElementValue('feeding-type');
-                data.amount = this.getElementValue('feeding-amount');
-                data.duration = this.getElementValue('feeding-duration');
-                data.notes = this.getElementValue('feeding-notes');
-                break;
-            case 'sleep':
-                data.type = this.getElementValue('sleep-type');
-                data.duration = this.getElementValue('sleep-duration');
-                data.quality = this.getElementValue('sleep-quality');
-                data.notes = this.getElementValue('sleep-notes');
-                break;
-            case 'diaper':
-                data.type = this.getElementValue('diaper-type');
-                data.notes = this.getElementValue('diaper-notes');
-                break;
-            case 'growth':
-                data.weight = this.getElementValue('growth-weight');
-                data.height = this.getElementValue('growth-height');
-                data.head = this.getElementValue('growth-head');
-                data.notes = this.getElementValue('growth-notes');
-                break;
-            case 'health':
-                data.type = this.getElementValue('health-type');
-                data.value = this.getElementValue('health-value');
-                data.notes = this.getElementValue('health-notes');
-                break;
-            case 'activity':
-                data.type = this.getElementValue('activity-type');
-                data.duration = this.getElementValue('activity-duration');
-                data.notes = this.getElementValue('activity-notes');
-                break;
-            case 'mood':
-                data.emotion = this.getElementValue('mood-emotion');
-                data.behavior = this.getElementValue('mood-behavior');
-                data.notes = this.getElementValue('mood-notes');
-                break;
-            case 'note':
-                data.title = this.getElementValue('note-title');
-                data.content = this.getElementValue('note-content');
-                data.tags = this.getElementValue('note-tags').split(',').map(t => t.trim()).filter(t => t);
-                break;
-        }
-
-        return data;
-    }
-
-    // 取得元素值的輔助方法
-    getElementValue(id) {
-        const element = document.getElementById(id);
-        return element ? element.value : '';
     }
 
     // 載入儀表板
     async loadDashboard() {
-        if (!this.currentBaby) {
-            this.showEmptyDashboard();
-            return;
-        }
+        if (!this.currentChild) return;
 
         try {
-            await this.loadQuickStats();
-            await this.loadRecentRecords();
-            this.updateChart();
+            // 設置當前日期
+            document.getElementById('currentDate').textContent = 
+                new Date().toLocaleDateString('zh-TW', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric', 
+                    weekday: 'long' 
+                });
+
+            // 載入今日統計
+            await this.loadTodayStats();
+
+            // 載入最近活動
+            await this.loadRecentActivities();
+
+            // 更新圖表
+            await this.updateCharts();
+
         } catch (error) {
             console.error('載入儀表板失敗:', error);
-            this.showToast('載入儀表板失敗', 'error');
         }
     }
 
-    // 顯示空的儀表板
-    showEmptyDashboard() {
-        const stats = [
-            { id: 'today-feeds', value: '0' },
-            { id: 'today-sleep', value: '0h' },
-            { id: 'today-diapers', value: '0' },
-            { id: 'today-activities', value: '0' }
-        ];
-
-        stats.forEach(stat => {
-            const element = document.getElementById(stat.id);
-            if (element) {
-                element.textContent = stat.value;
-            }
-        });
+    // 載入今日統計
+    async loadTodayStats() {
+        const today = new Date().toDateString();
+        const records = await this.db.getByIndex('records', 'childId', this.currentChild.id);
         
-        const recentList = document.getElementById('recent-list');
-        if (recentList) {
-            recentList.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">📝</div>
-                    <p>尚無記錄</p>
-                    <button class="start-recording-btn" onclick="document.getElementById('quick-action-btn').click()">開始記錄</button>
-                </div>
-            `;
-        }
-    }
+        const todayRecords = records.filter(record => 
+            new Date(record.date).toDateString() === today
+        );
 
-    // 載入快速統計
-    async loadQuickStats() {
-        const today = new Date().toISOString().split('T')[0];
-        const records = await this.getRecordsByBabyAndDate(this.currentBaby.id, today);
-
+        // 統計各類型記錄
         const stats = {
-            feeds: records.filter(r => r.type === 'feeding').length,
-            sleep: this.calculateTotalSleep(records.filter(r => r.type === 'sleep')),
-            diapers: records.filter(r => r.type === 'diaper').length,
-            activities: records.filter(r => r.type === 'activity').length
+            feedings: todayRecords.filter(r => r.type === 'feeding').length,
+            sleep: this.calculateTotalSleep(todayRecords.filter(r => r.type === 'sleep')),
+            diapers: todayRecords.filter(r => r.type === 'diaper').length,
+            mood: this.getCurrentMood(todayRecords.filter(r => r.type === 'mood'))
         };
 
-        // 更新統計顯示
-        const statElements = [
-            { id: 'today-feeds', value: stats.feeds },
-            { id: 'today-sleep', value: stats.sleep },
-            { id: 'today-diapers', value: stats.diapers },
-            { id: 'today-activities', value: stats.activities }
-        ];
-
-        statElements.forEach(stat => {
-            const element = document.getElementById(stat.id);
-            if (element) {
-                element.textContent = stat.value;
-            }
-        });
+        // 更新UI
+        document.getElementById('todayFeedings').textContent = stats.feedings;
+        document.getElementById('todaySleep').textContent = stats.sleep;
+        document.getElementById('todayDiapers').textContent = stats.diapers;
+        document.getElementById('currentMood').textContent = stats.mood;
     }
 
     // 計算總睡眠時間
     calculateTotalSleep(sleepRecords) {
         let totalMinutes = 0;
+        
         sleepRecords.forEach(record => {
-            if (record.data.duration) {
-                totalMinutes += parseInt(record.data.duration);
+            if (record.data.endTime && record.data.startTime) {
+                const start = new Date(record.data.startTime);
+                const end = new Date(record.data.endTime);
+                totalMinutes += (end - start) / (1000 * 60);
             }
         });
-        
+
         const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
+        const minutes = Math.floor(totalMinutes % 60);
         
-        if (hours === 0) {
-            return `${minutes}m`;
-        } else if (minutes === 0) {
-            return `${hours}h`;
-        } else {
-            return `${hours}h ${minutes}m`;
-        }
+        return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`;
     }
 
-    // 載入最近記錄
-    async loadRecentRecords() {
-        const records = await this.getRecentRecords(this.currentBaby.id, 10);
-        const recentList = document.getElementById('recent-list');
-
-        if (!recentList) return;
-
-        if (records.length === 0) {
-            recentList.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">📝</div>
-                    <p>尚無記錄</p>
-                    <button class="start-recording-btn" onclick="document.getElementById('quick-action-btn').click()">開始記錄</button>
-                </div>
-            `;
-            return;
-        }
-
-        recentList.innerHTML = records.map(record => this.createRecentRecordItem(record)).join('');
+    // 獲取當前情緒
+    getCurrentMood(moodRecords) {
+        if (moodRecords.length === 0) return '平靜';
+        
+        const latest = moodRecords.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+        const moodMap = {
+            happy: '開心',
+            calm: '平靜',
+            excited: '興奮',
+            anxious: '不安',
+            fussy: '煩躁',
+            crying: '哭泣'
+        };
+        
+        return moodMap[latest.data.moodState] || '平靜';
     }
 
-    // 建立最近記錄項目
-    createRecentRecordItem(record) {
+    // 載入最近活動
+    async loadRecentActivities() {
+        const records = await this.db.getByIndex('records', 'childId', this.currentChild.id);
+        const recentRecords = records
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .slice(0, 5);
+
+        const activitiesList = document.getElementById('recentActivitiesList');
+        activitiesList.innerHTML = '';
+
+        recentRecords.forEach(record => {
+            const activityItem = this.createActivityItem(record);
+            activitiesList.appendChild(activityItem);
+        });
+    }
+
+    // 創建活動項目
+    createActivityItem(record) {
+        const div = document.createElement('div');
+        div.className = 'activity-item';
+
+        const icon = this.getRecordIcon(record.type);
+        const title = this.getRecordTitle(record);
+        const time = new Date(record.date).toLocaleString('zh-TW');
+
+        div.innerHTML = `
+            <div class="activity-icon">${icon}</div>
+            <div class="activity-details">
+                <div class="activity-title">${title}</div>
+                <div class="activity-time">${time}</div>
+            </div>
+        `;
+
+        return div;
+    }
+
+    // 獲取記錄圖標
+    getRecordIcon(type) {
         const icons = {
             feeding: '🍼',
             sleep: '😴',
-            diaper: '👶',
-            growth: '📏',
-            health: '🏥',
-            activity: '🎈',
+            diaper: '🍼',
             mood: '😊',
-            note: '💭'
+            activity: '🎯',
+            health: '🏥'
         };
-
-        const time = new Date(record.datetime).toLocaleString('zh-TW', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        let description = this.getRecordDescription(record);
-
-        return `
-            <div class="recent-item">
-                <div class="recent-item-icon">${icons[record.type] || '📝'}</div>
-                <div class="recent-item-content">
-                    <div class="recent-item-title">${this.getRecordTitle(record.type)}</div>
-                    <div class="recent-item-meta">${description}</div>
-                </div>
-                <div class="recent-item-time">${time}</div>
-            </div>
-        `;
+        return icons[type] || '📝';
     }
 
-    // 取得記錄描述
-    getRecordDescription(record) {
-        const data = record.data;
-        
-        switch (record.type) {
-            case 'feeding':
-                let desc = data.type ? this.getFeedingTypeLabel(data.type) : '';
-                if (data.amount) desc += ` ${data.amount}ml`;
-                if (data.duration) desc += ` (${data.duration}分鐘)`;
-                return desc;
-            case 'sleep':
-                return data.duration ? `${data.duration} 分鐘` : '睡眠記錄';
-            case 'diaper':
-                return this.getDiaperTypeLabel(data.type);
-            case 'growth':
-                let growth = [];
-                if (data.weight) growth.push(`體重 ${data.weight}kg`);
-                if (data.height) growth.push(`身高 ${data.height}cm`);
-                return growth.join(', ') || '成長記錄';
-            case 'health':
-                return data.value || this.getHealthTypeLabel(data.type);
-            case 'activity':
-                return this.getActivityTypeLabel(data.type);
-            case 'mood':
-                return this.getMoodLabel(data.emotion);
-            case 'note':
-                return data.title || '記錄';
-            default:
-                return '記錄';
-        }
-    }
-
-    // 取得餵食類型標籤
-    getFeedingTypeLabel(type) {
-        const labels = {
-            breast: '母乳',
-            formula: '配方奶',
-            solids: '副食品'
+    // 獲取記錄標題
+    getRecordTitle(record) {
+        const titles = {
+            feeding: '餵食記錄',
+            sleep: '睡眠記錄',
+            diaper: '更換尿布',
+            mood: '情緒記錄',
+            activity: '活動記錄',
+            health: '健康記錄'
         };
-        return labels[type] || type;
-    }
-
-    // 取得尿布類型標籤
-    getDiaperTypeLabel(type) {
-        const labels = {
-            wet: '尿濕',
-            soiled: '排便',
-            both: '尿濕+排便'
-        };
-        return labels[type] || type;
-    }
-
-    // 取得健康類型標籤
-    getHealthTypeLabel(type) {
-        const labels = {
-            temperature: '體溫測量',
-            medicine: '用藥記錄',
-            symptoms: '症狀記錄',
-            checkup: '健康檢查',
-            vaccine: '疫苗接種'
-        };
-        return labels[type] || type;
-    }
-
-    // 取得活動類型標籤
-    getActivityTypeLabel(type) {
-        const labels = {
-            tummy: '趴睡練習',
-            play: '遊戲時間',
-            reading: '親子共讀',
-            music: '音樂互動',
-            walk: '散步/外出',
-            massage: '按摩',
-            bath: '洗澡',
-            other: '其他活動'
-        };
-        return labels[type] || type;
-    }
-
-    // 取得情緒標籤
-    getMoodLabel(emotion) {
-        const labels = {
-            happy: '😊 開心愉悅',
-            calm: '😌 平靜滿足',
-            excited: '🤩 興奮好奇',
-            fussy: '😕 不安焦慮',
-            cranky: '😣 煩躁易怒',
-            crying: '😭 大哭不適'
-        };
-        return labels[emotion] || emotion;
+        return titles[record.type] || '記錄';
     }
 
     // 初始化圖表
-    initializeChart() {
-        const ctx = document.getElementById('trendChart');
-        if (!ctx) return;
-
-        this.chart = new Chart(ctx.getContext('2d'), {
+    initCharts() {
+        const ctx = document.getElementById('weeklyChart').getContext('2d');
+        
+        APP_STATE.charts.weekly = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
-                datasets: []
+                datasets: [
+                    {
+                        label: '餵食次數',
+                        data: [],
+                        borderColor: '#FF8A7A',
+                        backgroundColor: 'rgba(255, 138, 122, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: '睡眠時數',
+                        data: [],
+                        borderColor: '#7FB3D3',
+                        backgroundColor: 'rgba(127, 179, 211, 0.1)',
+                        yAxisID: 'y1',
+                        tension: 0.4
+                    }
+                ]
             },
             options: {
                 responsive: true,
@@ -1283,575 +707,679 @@ class BabyTracker {
                 plugins: {
                     legend: {
                         position: 'top',
-                    },
-                    title: {
-                        display: false
                     }
                 },
                 scales: {
                     y: {
-                        beginAtZero: true
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: '餵食次數'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: '睡眠時數'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
                     }
                 }
             }
         });
     }
 
-    // 切換圖表
-    switchChart(chartType) {
-        // 更新按鈕狀態
-        document.querySelectorAll('.chart-tab').forEach(tab => {
-            tab.classList.remove('active');
-        });
-        const activeTab = document.querySelector(`[data-chart="${chartType}"]`);
-        if (activeTab) {
-            activeTab.classList.add('active');
-        }
-
-        // 更新圖表數據
-        this.updateChart(chartType);
-    }
-
     // 更新圖表
-    async updateChart(chartType = 'feeding') {
-        if (!this.currentBaby || !this.chart) return;
+    async updateCharts() {
+        if (!this.currentChild || !APP_STATE.charts.weekly) return;
 
         try {
-            const data = await this.getChartData(chartType);
-            this.chart.data = data;
-            this.chart.update();
+            const records = await this.db.getByIndex('records', 'childId', this.currentChild.id);
+            const lastWeek = this.getLastWeekData(records);
+
+            APP_STATE.charts.weekly.data.labels = lastWeek.labels;
+            APP_STATE.charts.weekly.data.datasets[0].data = lastWeek.feedings;
+            APP_STATE.charts.weekly.data.datasets[1].data = lastWeek.sleep;
+            APP_STATE.charts.weekly.update();
+
         } catch (error) {
             console.error('更新圖表失敗:', error);
         }
     }
 
-    // 取得圖表數據
-    async getChartData(chartType) {
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 7); // 最近7天
-
-        const records = await this.getRecordsByDateRange(this.currentBaby.id, startDate, endDate);
-
-        switch (chartType) {
-            case 'feeding':
-                return this.getFeedingChartData(records);
-            case 'sleep':
-                return this.getSleepChartData(records);
-            case 'growth':
-                return this.getGrowthChartData(records);
-            default:
-                return { labels: [], datasets: [] };
+    // 獲取最近一週資料
+    getLastWeekData(records) {
+        const lastWeek = [];
+        const today = new Date();
+        
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            lastWeek.push(date);
         }
-    }
 
-    // 取得餵食圖表數據
-    getFeedingChartData(records) {
-        const feedingRecords = records.filter(r => r.type === 'feeding');
-        const dailyData = this.groupRecordsByDay(feedingRecords);
-        
-        const labels = Object.keys(dailyData).sort();
-        const breastData = [];
-        const formulaData = [];
-        const solidsData = [];
+        const labels = lastWeek.map(date => 
+            date.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' })
+        );
 
-        labels.forEach(date => {
-            const dayRecords = dailyData[date];
-            breastData.push(dayRecords.filter(r => r.data.type === 'breast').length);
-            formulaData.push(dayRecords.filter(r => r.data.type === 'formula').length);
-            solidsData.push(dayRecords.filter(r => r.data.type === 'solids').length);
+        const feedings = lastWeek.map(date => {
+            const dayRecords = records.filter(record => 
+                record.type === 'feeding' && 
+                new Date(record.date).toDateString() === date.toDateString()
+            );
+            return dayRecords.length;
         });
 
-        return {
-            labels: labels.map(date => new Date(date).toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' })),
-            datasets: [
-                {
-                    label: '母乳',
-                    data: breastData,
-                    borderColor: '#FF8A7A',
-                    backgroundColor: 'rgba(255, 138, 122, 0.1)',
-                },
-                {
-                    label: '配方奶',
-                    data: formulaData,
-                    borderColor: '#7FB3D3',
-                    backgroundColor: 'rgba(127, 179, 211, 0.1)',
-                },
-                {
-                    label: '副食品',
-                    data: solidsData,
-                    borderColor: '#FFD93D',
-                    backgroundColor: 'rgba(255, 217, 61, 0.1)',
-                }
-            ]
-        };
-    }
-
-    // 取得睡眠圖表數據
-    getSleepChartData(records) {
-        const sleepRecords = records.filter(r => r.type === 'sleep');
-        const dailyData = this.groupRecordsByDay(sleepRecords);
-        
-        const labels = Object.keys(dailyData).sort();
-        const sleepData = [];
-
-        labels.forEach(date => {
-            const dayRecords = dailyData[date];
-            const totalMinutes = dayRecords.reduce((sum, record) => {
-                return sum + (parseInt(record.data.duration) || 0);
-            }, 0);
-            sleepData.push(totalMinutes / 60); // 轉換為小時
+        const sleep = lastWeek.map(date => {
+            const dayRecords = records.filter(record => 
+                record.type === 'sleep' && 
+                new Date(record.date).toDateString() === date.toDateString()
+            );
+            return this.calculateTotalSleepHours(dayRecords);
         });
 
-        return {
-            labels: labels.map(date => new Date(date).toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' })),
-            datasets: [
-                {
-                    label: '睡眠時間 (小時)',
-                    data: sleepData,
-                    borderColor: '#7FB3D3',
-                    backgroundColor: 'rgba(127, 179, 211, 0.1)',
-                    fill: true
-                }
-            ]
-        };
+        return { labels, feedings, sleep };
     }
 
-    // 取得成長圖表數據
-    getGrowthChartData(records) {
-        const growthRecords = records.filter(r => r.type === 'growth' && (r.data.weight || r.data.height))
-                                    .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+    // 計算總睡眠小時數
+    calculateTotalSleepHours(sleepRecords) {
+        let totalMinutes = 0;
         
-        const labels = [];
-        const weightData = [];
-        const heightData = [];
-
-        growthRecords.forEach(record => {
-            const date = new Date(record.datetime).toLocaleDateString('zh-TW', { month: 'short', day: 'numeric' });
-            labels.push(date);
-            weightData.push(parseFloat(record.data.weight) || null);
-            heightData.push(parseFloat(record.data.height) || null);
-        });
-
-        return {
-            labels,
-            datasets: [
-                {
-                    label: '體重 (kg)',
-                    data: weightData,
-                    borderColor: '#FF8A7A',
-                    backgroundColor: 'rgba(255, 138, 122, 0.1)',
-                    yAxisID: 'y',
-                },
-                {
-                    label: '身高 (cm)',
-                    data: heightData,
-                    borderColor: '#FFD93D',
-                    backgroundColor: 'rgba(255, 217, 61, 0.1)',
-                    yAxisID: 'y1',
-                }
-            ]
-        };
-    }
-
-    // 按日期分組記錄
-    groupRecordsByDay(records) {
-        return records.reduce((groups, record) => {
-            const date = record.datetime.split('T')[0];
-            if (!groups[date]) groups[date] = [];
-            groups[date].push(record);
-            return groups;
-        }, {});
-    }
-
-    // 載入里程碑
-    async loadMilestones(category = 'all') {
-        if (!this.currentBaby) return;
-
-        try {
-            const milestones = await this.getMilestonesByBaby(this.currentBaby.id, category);
-            const timeline = document.getElementById('milestone-timeline');
-
-            if (!timeline) return;
-
-            if (milestones.length === 0) {
-                timeline.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-icon">🌟</div>
-                        <p>尚未記錄里程碑</p>
-                        <button class="add-milestone-btn" onclick="document.getElementById('add-milestone-btn').click()">開始記錄</button>
-                    </div>
-                `;
-                return;
+        sleepRecords.forEach(record => {
+            if (record.data.endTime && record.data.startTime) {
+                const start = new Date(record.data.startTime);
+                const end = new Date(record.data.endTime);
+                totalMinutes += (end - start) / (1000 * 60);
             }
-
-            timeline.innerHTML = milestones.map(milestone => this.createMilestoneItem(milestone)).join('');
-        } catch (error) {
-            console.error('載入里程碑失敗:', error);
-            this.showToast('載入里程碑失敗', 'error');
-        }
-    }
-
-    // 建立里程碑項目
-    createMilestoneItem(milestone) {
-        const categoryIcons = {
-            motor: '🏃',
-            fine: '✋',
-            language: '💬',
-            cognitive: '🧠',
-            social: '👥',
-            custom: '⭐'
-        };
-
-        const date = new Date(milestone.date).toLocaleDateString('zh-TW', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
         });
 
-        return `
-            <div class="milestone-item">
-                <div class="milestone-icon">${categoryIcons[milestone.category] || '⭐'}</div>
-                <div class="milestone-content">
-                    <div class="milestone-title">${milestone.title}</div>
-                    <div class="milestone-date">${date}</div>
-                    ${milestone.description ? `<div class="milestone-description">${milestone.description}</div>` : ''}
-                </div>
-            </div>
-        `;
+        return parseFloat((totalMinutes / 60).toFixed(1));
     }
 
-    // 篩選里程碑
-    filterMilestones(category) {
-        // 更新按鈕狀態
-        document.querySelectorAll('.milestone-tab').forEach(tab => {
-            tab.classList.remove('active');
+    // 初始化表單提交
+    initForms() {
+        // 新增孩子表單
+        document.getElementById('addChildForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await this.handleAddChild(e.target);
         });
-        const activeTab = document.querySelector(`[data-category="${category}"]`);
-        if (activeTab) {
-            activeTab.classList.add('active');
-        }
 
-        // 載入對應分類
-        this.loadMilestones(category);
+        // 記錄表單
+        document.querySelectorAll('.record-form form').forEach(form => {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.handleRecordSubmit(e.target);
+            });
+        });
+
+        // 新增里程碑表單
+        document.getElementById('addMilestoneForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await this.handleAddMilestone(e.target);
+        });
+
+        // 新增記憶表單
+        document.getElementById('addMemoryForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await this.handleAddMemory(e.target);
+        });
     }
 
-    // 開啟里程碑模態框
-    openMilestoneModal() {
-        if (!this.currentBaby) {
-            this.showToast('請先選擇寶寶', 'warning');
-            return;
-        }
-
-        const modal = document.getElementById('milestone-modal');
-        const form = document.getElementById('milestone-form');
-        if (form) {
-            form.reset();
-        }
-        
-        const dateInput = document.getElementById('milestone-date');
-        if (dateInput) {
-            dateInput.value = new Date().toISOString().split('T')[0];
-        }
-        
-        this.showModal(modal);
-    }
-
-    // 儲存里程碑
-    async saveMilestone(event) {
-        event.preventDefault();
-
+    // 處理新增孩子
+    async handleAddChild(form) {
         try {
-            const form = event.target;
             const formData = new FormData(form);
-            
-            const milestone = {
-                babyId: this.currentBaby.id,
-                category: formData.get('milestone-category') || this.getElementValue('milestone-category'),
-                title: formData.get('milestone-title') || this.getElementValue('milestone-title'),
-                date: formData.get('milestone-date') || this.getElementValue('milestone-date'),
-                description: formData.get('milestone-description') || this.getElementValue('milestone-description'),
+            const photo = await this.processPhoto(formData.get('childPhoto'));
+
+            const child = {
+                name: formData.get('childName'),
+                gender: formData.get('childGender'),
+                birthdate: formData.get('childBirthdate'),
+                photo: photo,
                 createdAt: new Date().toISOString()
             };
 
-            // 驗證必填欄位
-            if (!milestone.category || !milestone.title || !milestone.date) {
-                this.showToast('請填寫必填欄位', 'error');
-                return;
-            }
+            await this.db.add('children', child);
+            await this.loadChildren();
+            this.closeModal('addChildModal');
+            this.showToast('成功建立孩子檔案！', 'success');
 
-            // 處理照片
-            const photoInput = document.getElementById('milestone-photo');
-            if (photoInput && photoInput.files[0]) {
-                milestone.photo = await this.convertFileToBase64(photoInput.files[0]);
-            }
-
-            await this.saveMilestoneToDb(milestone);
-            
-            this.closeModal(document.getElementById('milestone-modal'));
-            this.loadMilestones();
-            this.showToast('里程碑已記錄', 'success');
         } catch (error) {
-            console.error('儲存里程碑失敗:', error);
+            console.error('新增孩子失敗:', error);
+            this.showToast('建立檔案失敗，請重試', 'error');
+        }
+    }
+
+    // 處理記錄提交
+    async handleRecordSubmit(form) {
+        if (!this.currentChild) {
+            this.showToast('請先選擇孩子', 'warning');
+            return;
+        }
+
+        try {
+            const formData = new FormData(form);
+            const recordType = form.closest('.record-form').id.replace('Form', '');
+            
+            const record = {
+                childId: this.currentChild.id,
+                type: recordType,
+                date: new Date().toISOString(),
+                data: await this.processRecordData(recordType, formData)
+            };
+
+            await this.db.add('records', record);
+            form.reset();
+            this.showToast('記錄儲存成功！', 'success');
+
+            // 更新儀表板
+            if (APP_STATE.currentSection === 'dashboard') {
+                await this.loadDashboard();
+            }
+
+        } catch (error) {
+            console.error('儲存記錄失敗:', error);
             this.showToast('儲存失敗，請重試', 'error');
         }
     }
 
-    // 載入記憶
-    async loadMemories(filter = 'all') {
-        if (!this.currentBaby) return;
+    // 處理記錄資料
+    async processRecordData(type, formData) {
+        const data = {};
+
+        switch (type) {
+            case 'feeding':
+                data.feedingType = formData.get('feedingType');
+                data.time = formData.get('feedingTime');
+                data.notes = formData.get('feedingNotes');
+                data.photo = await this.processPhoto(formData.get('feedingPhoto'));
+
+                if (data.feedingType === 'breast') {
+                    data.breastSide = formData.get('breastSide');
+                    data.duration = formData.get('feedingDuration');
+                } else if (data.feedingType === 'formula') {
+                    data.amount = formData.get('formulaAmount');
+                } else if (data.feedingType === 'solid') {
+                    data.foodType = formData.get('solidType');
+                    data.amount = formData.get('solidAmount');
+                }
+                break;
+
+            case 'sleep':
+                data.sleepType = formData.get('sleepType');
+                data.notes = formData.get('sleepNotes');
+
+                if (data.sleepType === 'start') {
+                    data.startTime = formData.get('sleepStartTime');
+                } else if (data.sleepType === 'end') {
+                    data.endTime = formData.get('sleepEndTime');
+                } else if (data.sleepType === 'complete') {
+                    data.startTime = formData.get('sleepCompleteStart');
+                    data.endTime = formData.get('sleepCompleteEnd');
+                    data.quality = formData.get('sleepQuality');
+                }
+                break;
+
+            case 'diaper':
+                data.time = formData.get('diaperTime');
+                data.types = formData.getAll('diaperType');
+                data.notes = formData.get('diaperNotes');
+
+                if (data.types.includes('dirty')) {
+                    data.stoolConsistency = formData.get('stoolConsistency');
+                    data.stoolColor = formData.get('stoolColor');
+                }
+                break;
+
+            case 'mood':
+                data.time = formData.get('moodTime');
+                data.moodState = formData.get('moodState');
+                data.behaviorState = formData.get('behaviorState');
+                data.trigger = formData.get('moodTrigger');
+                data.notes = formData.get('moodNotes');
+                break;
+
+            case 'activity':
+                data.time = formData.get('activityTime');
+                data.types = formData.getAll('activityType');
+                data.duration = formData.get('activityDuration');
+                data.custom = formData.get('activityCustom');
+                data.notes = formData.get('activityNotes');
+                data.photo = await this.processPhoto(formData.get('activityPhoto'));
+                break;
+
+            case 'health':
+                data.time = formData.get('healthTime');
+                data.healthType = formData.get('healthType');
+                data.notes = formData.get('healthNotes');
+
+                if (data.healthType === 'temperature') {
+                    data.temperature = formData.get('temperature');
+                    data.method = formData.get('temperatureMethod');
+                } else if (data.healthType === 'weight') {
+                    data.weight = formData.get('weight');
+                    data.height = formData.get('height');
+                } else if (data.healthType === 'symptom') {
+                    data.symptoms = formData.getAll('symptoms');
+                } else if (data.healthType === 'medication') {
+                    data.medicationName = formData.get('medicationName');
+                    data.dose = formData.get('medicationDose');
+                } else if (data.healthType === 'vaccination') {
+                    data.vaccineName = formData.get('vaccineName');
+                    data.location = formData.get('vaccineLocation');
+                }
+                break;
+        }
+
+        return data;
+    }
+
+    // 處理照片
+    async processPhoto(file) {
+        if (!file || file.size === 0) return null;
+
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // 初始化快速操作
+    initQuickActions() {
+        document.querySelectorAll('.quick-action-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const action = e.currentTarget.dataset.action;
+                this.quickRecord(action);
+            });
+        });
+    }
+
+    // 初始化里程碑
+    initMilestones() {
+        document.getElementById('addMilestoneBtn').addEventListener('click', () => {
+            this.openModal('addMilestoneModal');
+        });
+    }
+
+    // 載入里程碑
+    async loadMilestones() {
+        if (!this.currentChild) return;
 
         try {
-            const memories = await this.getMemoriesByBaby(this.currentBaby.id, filter);
-            const grid = document.getElementById('memories-grid');
+            const milestones = await this.db.getByIndex('milestones', 'childId', this.currentChild.id);
+            const predefinedMilestones = this.getPredefinedMilestones();
 
-            if (!grid) return;
+            // 載入各分類的里程碑
+            const categories = ['motor', 'fine', 'language', 'cognitive', 'social', 'self-care'];
+            
+            categories.forEach(category => {
+                const container = document.getElementById(`${category}Milestones`);
+                container.innerHTML = '';
 
-            if (memories.length === 0) {
-                grid.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-icon">📚</div>
-                        <p>還沒有記憶</p>
-                        <button class="add-memory-btn" onclick="document.getElementById('add-memory-btn').click()">建立第一個記憶</button>
-                    </div>
-                `;
-                return;
-            }
+                const categoryMilestones = [
+                    ...predefinedMilestones[category] || [],
+                    ...milestones.filter(m => m.category === category)
+                ];
 
-            grid.innerHTML = memories.map(memory => this.createMemoryCard(memory)).join('');
+                categoryMilestones.forEach(milestone => {
+                    const item = this.createMilestoneItem(milestone);
+                    container.appendChild(item);
+                });
+            });
+
+            // 載入時間軸
+            this.loadMilestoneTimeline(milestones);
+
         } catch (error) {
-            console.error('載入記憶失敗:', error);
-            this.showToast('載入記憶失敗', 'error');
+            console.error('載入里程碑失敗:', error);
         }
     }
 
-    // 建立記憶卡片
+    // 獲取預定義里程碑
+    getPredefinedMilestones() {
+        return {
+            motor: [
+                { title: '抬頭', expectedAge: '2個月', completed: false },
+                { title: '翻身', expectedAge: '4-6個月', completed: false },
+                { title: '不需支撐坐立', expectedAge: '6-8個月', completed: false },
+                { title: '爬行', expectedAge: '7-10個月', completed: false },
+                { title: '站立', expectedAge: '9-12個月', completed: false },
+                { title: '走路', expectedAge: '12-15個月', completed: false }
+            ],
+            fine: [
+                { title: '握拳反射', expectedAge: '0-3個月', completed: false },
+                { title: '主動抓握', expectedAge: '3-4個月', completed: false },
+                { title: '用拇指和食指捏取', expectedAge: '8-10個月', completed: false },
+                { title: '疊積木', expectedAge: '12-15個月', completed: false }
+            ],
+            language: [
+                { title: '發出聲音', expectedAge: '0-2個月', completed: false },
+                { title: '咿呀學語', expectedAge: '4-6個月', completed: false },
+                { title: '說第一個字', expectedAge: '10-14個月', completed: false },
+                { title: '說第一個詞組', expectedAge: '15-20個月', completed: false }
+            ],
+            cognitive: [
+                { title: '眼神追蹤', expectedAge: '2-3個月', completed: false },
+                { title: '物體恆存概念', expectedAge: '8-12個月', completed: false },
+                { title: '模仿行為', expectedAge: '12-18個月', completed: false }
+            ],
+            social: [
+                { title: '社交微笑', expectedAge: '6-8週', completed: false },
+                { title: '認識照顧者', expectedAge: '2-3個月', completed: false },
+                { title: '表現分離焦慮', expectedAge: '6-8個月', completed: false },
+                { title: '與他人玩耍', expectedAge: '12-18個月', completed: false }
+            ],
+            'self-care': [
+                { title: '自己拿奶瓶', expectedAge: '6-10個月', completed: false },
+                { title: '用杯子喝水', expectedAge: '12-15個月', completed: false },
+                { title: '用湯匙吃飯', expectedAge: '15-18個月', completed: false }
+            ]
+        };
+    }
+
+    // 創建里程碑項目
+    createMilestoneItem(milestone) {
+        const div = document.createElement('div');
+        div.className = `milestone-item ${milestone.completed ? 'completed' : ''}`;
+
+        div.innerHTML = `
+            <div class="milestone-title">${milestone.title}</div>
+            <div class="milestone-age">${milestone.achievedDate ? 
+                `達成於 ${new Date(milestone.achievedDate).toLocaleDateString('zh-TW')}` : 
+                `預期 ${milestone.expectedAge}`
+            }</div>
+        `;
+
+        if (!milestone.completed) {
+            div.addEventListener('click', () => {
+                this.markMilestoneCompleted(milestone);
+            });
+        }
+
+        return div;
+    }
+
+    // 標記里程碑完成
+    async markMilestoneCompleted(milestone) {
+        try {
+            const completedMilestone = {
+                ...milestone,
+                completed: true,
+                achievedDate: new Date().toISOString(),
+                childId: this.currentChild.id
+            };
+
+            if (milestone.id) {
+                await this.db.update('milestones', completedMilestone);
+            } else {
+                await this.db.add('milestones', completedMilestone);
+            }
+
+            this.loadMilestones();
+            this.showToast('恭喜！里程碑達成！', 'success');
+
+        } catch (error) {
+            console.error('標記里程碑失敗:', error);
+            this.showToast('標記失敗，請重試', 'error');
+        }
+    }
+
+    // 載入里程碑時間軸
+    loadMilestoneTimeline(milestones) {
+        const timeline = document.getElementById('milestoneTimeline');
+        timeline.innerHTML = '';
+
+        const completed = milestones
+            .filter(m => m.completed)
+            .sort((a, b) => new Date(a.achievedDate) - new Date(b.achievedDate));
+
+        completed.forEach(milestone => {
+            const item = this.createTimelineItem(milestone);
+            timeline.appendChild(item);
+        });
+    }
+
+    // 創建時間軸項目
+    createTimelineItem(milestone) {
+        const div = document.createElement('div');
+        div.className = 'timeline-item';
+
+        div.innerHTML = `
+            <div class="timeline-date">${new Date(milestone.achievedDate).toLocaleDateString('zh-TW')}</div>
+            <div class="timeline-content">
+                <div class="timeline-title">${milestone.title}</div>
+                <div class="timeline-description">${milestone.description || ''}</div>
+            </div>
+        `;
+
+        return div;
+    }
+
+    // 處理新增里程碑
+    async handleAddMilestone(form) {
+        if (!this.currentChild) {
+            this.showToast('請先選擇孩子', 'warning');
+            return;
+        }
+
+        try {
+            const formData = new FormData(form);
+            const photo = await this.processPhoto(formData.get('milestonePhoto'));
+
+            const milestone = {
+                childId: this.currentChild.id,
+                category: formData.get('milestoneCategory'),
+                title: formData.get('milestoneTitle'),
+                achievedDate: formData.get('milestoneDate'),
+                ageMonths: formData.get('milestoneAgeMonths'),
+                ageDays: formData.get('milestoneAgeDays'),
+                description: formData.get('milestoneDescription'),
+                photo: photo,
+                completed: true,
+                createdAt: new Date().toISOString()
+            };
+
+            await this.db.add('milestones', milestone);
+            this.closeModal('addMilestoneModal');
+            this.loadMilestones();
+            this.showToast('里程碑記錄成功！', 'success');
+
+        } catch (error) {
+            console.error('新增里程碑失敗:', error);
+            this.showToast('記錄失敗，請重試', 'error');
+        }
+    }
+
+    // 初始化記憶
+    initMemories() {
+        document.getElementById('addMemoryBtn').addEventListener('click', () => {
+            this.openModal('addMemoryModal');
+        });
+
+        // 記憶篩選
+        document.querySelectorAll('.memory-filter').forEach(filter => {
+            filter.addEventListener('click', (e) => {
+                this.filterMemories(e.target.dataset.filter);
+            });
+        });
+    }
+
+    // 載入記憶
+    async loadMemories() {
+        if (!this.currentChild) return;
+
+        try {
+            const memories = await this.db.getByIndex('memories', 'childId', this.currentChild.id);
+            this.displayMemories(memories);
+
+        } catch (error) {
+            console.error('載入記憶失敗:', error);
+        }
+    }
+
+    // 顯示記憶
+    displayMemories(memories) {
+        const grid = document.getElementById('memoriesGrid');
+        grid.innerHTML = '';
+
+        memories
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .forEach(memory => {
+                const card = this.createMemoryCard(memory);
+                grid.appendChild(card);
+            });
+    }
+
+    // 創建記憶卡片
     createMemoryCard(memory) {
+        const div = document.createElement('div');
+        div.className = 'memory-card';
+        div.dataset.memoryType = memory.type;
+
+        const photo = memory.photos && memory.photos[0] ? 
+            `<img src="${memory.photos[0]}" alt="${memory.title}">` : '';
+
         const typeLabels = {
-            highlights: '每日亮點',
-            stories: '成長故事',
-            photos: '照片日記',
-            quotes: '語錄收集'
+            'daily-highlight': '💫 每日亮點',
+            'growth-story': '📖 成長故事',
+            'photo-diary': '📷 照片日記',
+            'quotes': '💬 語錄收集',
+            'first-time': '🌟 第一次'
         };
 
-        const date = memory.date ? 
-            new Date(memory.date).toLocaleDateString('zh-TW') : 
-            new Date(memory.createdAt).toLocaleDateString('zh-TW');
-
-        const photoHtml = memory.photos && memory.photos.length > 0 ? 
-            `<img src="${memory.photos[0]}" alt="${memory.title}" class="memory-photo">` : '';
-
-        return `
-            <div class="memory-card">
-                ${photoHtml}
-                <div class="memory-content">
-                    <div class="memory-type">${typeLabels[memory.type] || memory.type}</div>
+        div.innerHTML = `
+            <div class="memory-photo">
+                ${photo}
+                <div class="memory-type-badge">${typeLabels[memory.type]}</div>
+            </div>
+            <div class="memory-content">
+                <div class="memory-header">
                     <div class="memory-title">${memory.title}</div>
-                    <div class="memory-text">${memory.content.substring(0, 100)}${memory.content.length > 100 ? '...' : ''}</div>
-                    <div class="memory-date">${date}</div>
+                    <div class="memory-date">${new Date(memory.date).toLocaleDateString('zh-TW')}</div>
+                </div>
+                <div class="memory-excerpt">${memory.content}</div>
+                <div class="memory-tags">
+                    ${memory.tags ? memory.tags.map(tag => `<span class="memory-tag">${tag}</span>`).join('') : ''}
                 </div>
             </div>
         `;
+
+        return div;
     }
 
     // 篩選記憶
     filterMemories(filter) {
-        // 更新按鈕狀態
-        document.querySelectorAll('.filter-btn').forEach(btn => {
+        // 更新篩選按鈕狀態
+        document.querySelectorAll('.memory-filter').forEach(btn => {
             btn.classList.remove('active');
         });
-        const activeBtn = document.querySelector(`[data-filter="${filter}"]`);
-        if (activeBtn) {
-            activeBtn.classList.add('active');
-        }
+        document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
 
-        // 載入對應篩選
-        this.loadMemories(filter === 'all' ? null : filter);
+        // 篩選記憶卡片
+        const cards = document.querySelectorAll('.memory-card');
+        cards.forEach(card => {
+            if (filter === 'all' || card.dataset.memoryType === filter) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        });
     }
 
-    // 開啟記憶模態框
-    openMemoryModal() {
-        if (!this.currentBaby) {
-            this.showToast('請先選擇寶寶', 'warning');
+    // 處理新增記憶
+    async handleAddMemory(form) {
+        if (!this.currentChild) {
+            this.showToast('請先選擇孩子', 'warning');
             return;
         }
 
-        const modal = document.getElementById('memory-modal');
-        const form = document.getElementById('memory-form');
-        if (form) {
-            form.reset();
-        }
-        
-        const dateInput = document.getElementById('memory-date');
-        if (dateInput) {
-            dateInput.value = new Date().toISOString().split('T')[0];
-        }
-        
-        this.showModal(modal);
-    }
-
-    // 儲存記憶
-    async saveMemory(event) {
-        event.preventDefault();
-
         try {
-            const form = event.target;
             const formData = new FormData(form);
-            
+            const photos = await this.processMultiplePhotos(formData.getAll('memoryPhotos'));
+            const tags = formData.get('memoryTags') ? 
+                formData.get('memoryTags').split(',').map(tag => tag.trim()) : [];
+
             const memory = {
-                babyId: this.currentBaby.id,
-                type: formData.get('memory-type') || this.getElementValue('memory-type'),
-                title: formData.get('memory-title') || this.getElementValue('memory-title'),
-                content: formData.get('memory-content') || this.getElementValue('memory-content'),
-                date: formData.get('memory-date') || this.getElementValue('memory-date'),
+                childId: this.currentChild.id,
+                type: formData.get('memoryType'),
+                title: formData.get('memoryTitle'),
+                date: formData.get('memoryDate'),
+                content: formData.get('memoryContent'),
+                photos: photos,
+                tags: tags,
                 createdAt: new Date().toISOString()
             };
 
-            // 驗證必填欄位
-            if (!memory.type || !memory.title || !memory.content) {
-                this.showToast('請填寫必填欄位', 'error');
-                return;
-            }
-
-            // 處理照片
-            const photoInput = document.getElementById('memory-photos');
-            if (photoInput && photoInput.files.length > 0) {
-                memory.photos = [];
-                for (let file of photoInput.files) {
-                    const base64 = await this.convertFileToBase64(file);
-                    memory.photos.push(base64);
-                }
-            }
-
-            await this.saveMemoryToDb(memory);
-            
-            this.closeModal(document.getElementById('memory-modal'));
+            await this.db.add('memories', memory);
+            this.closeModal('addMemoryModal');
             this.loadMemories();
-            this.showToast('記憶已儲存', 'success');
+            this.showToast('記憶儲存成功！', 'success');
+
         } catch (error) {
-            console.error('儲存記憶失敗:', error);
+            console.error('新增記憶失敗:', error);
             this.showToast('儲存失敗，請重試', 'error');
         }
     }
 
-    // 開啟快速行動
-    openQuickActions() {
-        if (!this.currentBaby) {
-            this.showToast('請先選擇寶寶', 'warning');
-            return;
+    // 處理多張照片
+    async processMultiplePhotos(files) {
+        const photos = [];
+        
+        for (const file of files) {
+            if (file && file.size > 0) {
+                const photo = await this.processPhoto(file);
+                if (photo) photos.push(photo);
+            }
         }
 
-        // 顯示快速行動選單
-        const actions = [
-            { text: '🍼 餵食', category: 'feeding' },
-            { text: '😴 睡眠', category: 'sleep' },
-            { text: '👶 換尿布', category: 'diaper' },
-            { text: '😊 情緒', category: 'mood' }
-        ];
+        return photos;
+    }
 
-        const menu = document.createElement('div');
-        menu.className = 'quick-actions-menu';
-        menu.style.cssText = `
-            position: fixed;
-            bottom: 80px;
-            right: 20px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            padding: 8px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        `;
-        
-        menu.innerHTML = actions.map(action => 
-            `<button class="quick-action-item" data-category="${action.category}" style="
-                padding: 12px 20px;
-                border: none;
-                background: #f8f9fa;
-                border-radius: 8px;
-                cursor: pointer;
-                transition: background-color 0.2s;
-                white-space: nowrap;
-            ">${action.text}</button>`
-        ).join('');
-
-        document.body.appendChild(menu);
-
-        // 綁定事件
-        menu.querySelectorAll('.quick-action-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                this.openRecordModal(e.target.dataset.category);
-                document.body.removeChild(menu);
-            });
-            
-            // 添加hover效果
-            item.addEventListener('mouseenter', () => {
-                item.style.backgroundColor = '#e9ecef';
-            });
-            item.addEventListener('mouseleave', () => {
-                item.style.backgroundColor = '#f8f9fa';
-            });
+    // 初始化設定
+    initSettings() {
+        document.getElementById('exportDataBtn').addEventListener('click', () => {
+            this.exportData();
         });
 
-        // 點擊外部關閉
-        setTimeout(() => {
-            document.addEventListener('click', function closeMenu(e) {
-                if (!menu.contains(e.target) && !document.getElementById('quick-action-btn').contains(e.target)) {
-                    if (document.body.contains(menu)) {
-                        document.body.removeChild(menu);
-                    }
-                    document.removeEventListener('click', closeMenu);
-                }
-            });
-        }, 0);
-    }
+        document.getElementById('importDataBtn').addEventListener('click', () => {
+            document.getElementById('importDataFile').click();
+        });
 
-    // 開啟設定模態框
-    openSettingsModal() {
-        const modal = document.getElementById('settings-modal');
-        const themeSetting = document.getElementById('theme-setting');
-        if (themeSetting) {
-            themeSetting.value = localStorage.getItem('baby-tracker-theme') || 'auto';
-        }
-        this.showModal(modal);
-    }
+        document.getElementById('importDataFile').addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                this.importData(e.target.files[0]);
+            }
+        });
 
-    // 切換主題
-    toggleTheme() {
-        const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        this.applyTheme(newTheme);
-        localStorage.setItem('baby-tracker-theme', newTheme);
-    }
+        document.getElementById('darkModeToggle').addEventListener('change', (e) => {
+            this.setTheme(e.target.checked ? 'dark' : 'light');
+            this.saveSettings();
+        });
 
-    // 應用主題
-    applyTheme(theme) {
-        if (theme === 'auto') {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            theme = prefersDark ? 'dark' : 'light';
-        }
-        
-        document.documentElement.setAttribute('data-theme', theme);
-        
-        // 更新主題切換按鈕圖示
-        const themeToggle = document.getElementById('theme-toggle');
-        if (themeToggle) {
-            themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
-        }
+        document.getElementById('notificationsToggle').addEventListener('change', () => {
+            this.saveSettings();
+        });
     }
 
     // 匯出資料
     async exportData() {
         try {
             const data = {
-                babies: await this.getAllBabies(),
-                records: await this.getAllRecords(),
-                milestones: await this.getAllMilestones(),
-                memories: await this.getAllMemories(),
+                children: await this.db.getAll('children'),
+                records: await this.db.getAll('records'),
+                milestones: await this.db.getAll('milestones'),
+                memories: await this.db.getAll('memories'),
+                settings: await this.db.getAll('settings'),
                 exportDate: new Date().toISOString(),
-                version: '1.0'
+                version: '1.0.0'
             };
 
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1859,11 +1387,14 @@ class BabyTracker {
             
             const a = document.createElement('a');
             a.href = url;
-            a.download = `baby-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `baby_tracker_backup_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
             a.click();
-            
+            document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            this.showToast('資料匯出成功', 'success');
+
+            this.showToast('資料匯出成功！', 'success');
+
         } catch (error) {
             console.error('匯出資料失敗:', error);
             this.showToast('匯出失敗，請重試', 'error');
@@ -1871,414 +1402,332 @@ class BabyTracker {
     }
 
     // 匯入資料
-    async importData(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
+    async importData(file) {
         try {
             const text = await file.text();
             const data = JSON.parse(text);
 
             // 驗證資料格式
-            if (!data.babies || !Array.isArray(data.babies)) {
+            if (!data.children || !data.records) {
                 throw new Error('無效的資料格式');
             }
 
             // 確認匯入
-            const confirmed = await this.showConfirmModal(
-                '匯入資料',
-                '此操作將覆蓋現有資料，確定要繼續嗎？'
-            );
-
-            if (!confirmed) return;
+            if (!confirm('匯入資料將會覆蓋現有資料，確定要繼續嗎？')) {
+                return;
+            }
 
             // 清空現有資料
             await this.clearAllData();
 
             // 匯入新資料
-            for (const baby of data.babies) {
-                await this.saveBabyToDb(baby);
+            for (const child of data.children) {
+                delete child.id;
+                await this.db.add('children', child);
             }
 
-            if (data.records) {
-                for (const record of data.records) {
-                    await this.saveRecordToDb(record);
-                }
+            for (const record of data.records) {
+                delete record.id;
+                await this.db.add('records', record);
             }
 
             if (data.milestones) {
                 for (const milestone of data.milestones) {
-                    await this.saveMilestoneToDb(milestone);
+                    delete milestone.id;
+                    await this.db.add('milestones', milestone);
                 }
             }
 
             if (data.memories) {
                 for (const memory of data.memories) {
-                    await this.saveMemoryToDb(memory);
+                    delete memory.id;
+                    await this.db.add('memories', memory);
                 }
             }
 
-            // 重新載入介面
-            await this.loadBabies();
-            this.loadDashboard();
-            
-            this.showToast('資料匯入成功', 'success');
+            if (data.settings) {
+                for (const setting of data.settings) {
+                    await this.db.update('settings', setting);
+                }
+            }
+
+            // 重新載入應用
+            await this.loadChildren();
+            await this.loadSettings();
+            this.showToast('資料匯入成功！', 'success');
+            this.closeModal('settingsModal');
+
         } catch (error) {
             console.error('匯入資料失敗:', error);
             this.showToast('匯入失敗，請檢查檔案格式', 'error');
         }
-
-        // 重置檔案輸入
-        event.target.value = '';
-    }
-
-    // 顯示模態框
-    showModal(modal) {
-        if (!modal) return;
-        
-        modal.classList.add('show');
-        modal.setAttribute('aria-hidden', 'false');
-        document.body.style.overflow = 'hidden';
-        
-        // 焦點管理
-        const firstFocusable = modal.querySelector('input, textarea, select, button');
-        if (firstFocusable) firstFocusable.focus();
-    }
-
-    // 關閉模態框
-    closeModal(modal) {
-        if (!modal) return;
-        
-        modal.classList.remove('show');
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.style.overflow = '';
-        
-        // 返回焦點
-        const quickActionBtn = document.getElementById('quick-action-btn');
-        if (quickActionBtn) quickActionBtn.focus();
-    }
-
-    // 顯示確認模態框
-    showConfirmModal(title, message) {
-        return new Promise((resolve) => {
-            const modal = document.getElementById('confirm-modal');
-            const titleEl = document.getElementById('confirm-modal-title');
-            const messageEl = document.getElementById('confirm-modal-message');
-            
-            if (!modal || !titleEl || !messageEl) {
-                resolve(false);
-                return;
-            }
-            
-            titleEl.textContent = title;
-            messageEl.textContent = message;
-            
-            const actionBtn = document.getElementById('confirm-modal-action');
-            
-            // 移除舊的事件監聽器
-            const newActionBtn = actionBtn.cloneNode(true);
-            actionBtn.parentNode.replaceChild(newActionBtn, actionBtn);
-            
-            // 添加新的事件監聽器
-            newActionBtn.addEventListener('click', () => {
-                this.closeModal(modal);
-                resolve(true);
-            });
-            
-            // 取消按鈕
-            const cancelBtn = modal.querySelector('[data-dismiss="modal"]');
-            if (cancelBtn) {
-                cancelBtn.addEventListener('click', () => {
-                    this.closeModal(modal);
-                    resolve(false);
-                }, { once: true });
-            }
-            
-            this.showModal(modal);
-        });
-    }
-
-    // 顯示Toast通知
-    showToast(message, type = 'info') {
-        const container = document.getElementById('toast-container');
-        if (!container) return;
-        
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        
-        const icons = {
-            success: '✅',
-            error: '❌',
-            warning: '⚠️',
-            info: 'ℹ️'
-        };
-
-        toast.innerHTML = `
-            <div class="toast-icon">${icons[type] || 'ℹ️'}</div>
-            <div class="toast-content">
-                <div class="toast-message">${message}</div>
-            </div>
-            <button class="toast-close" aria-label="關閉">&times;</button>
-        `;
-
-        container.appendChild(toast);
-        
-        // 顯示Toast
-        setTimeout(() => toast.classList.add('show'), 100);
-        
-        // 關閉按鈕
-        toast.querySelector('.toast-close').addEventListener('click', () => {
-            this.removeToast(toast);
-        });
-        
-        // 自動關閉
-        setTimeout(() => {
-            if (container.contains(toast)) {
-                this.removeToast(toast);
-            }
-        }, 5000);
-    }
-
-    // 移除Toast
-    removeToast(toast) {
-        toast.classList.remove('show');
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
-            }
-        }, 300);
-    }
-
-    // 檔案轉Base64
-    convertFileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
-
-    // === 資料庫操作方法 ===
-
-    // 取得所有寶寶
-    getAllBabies() {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['babies'], 'readonly');
-            const store = transaction.objectStore('babies');
-            const request = store.getAll();
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 儲存寶寶到資料庫
-    saveBabyToDb(baby) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['babies'], 'readwrite');
-            const store = transaction.objectStore('babies');
-            const request = baby.id ? store.put(baby) : store.add(baby);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 儲存記錄到資料庫
-    saveRecordToDb(record) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['records'], 'readwrite');
-            const store = transaction.objectStore('records');
-            const request = store.add(record);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得寶寶的記錄（依日期）
-    getRecordsByBabyAndDate(babyId, date) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['records'], 'readonly');
-            const store = transaction.objectStore('records');
-            const index = store.index('babyId');
-            const request = index.getAll(babyId);
-            
-            request.onsuccess = () => {
-                const records = request.result.filter(record => 
-                    record.datetime.startsWith(date)
-                );
-                resolve(records);
-            };
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得最近記錄
-    getRecentRecords(babyId, limit = 10) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['records'], 'readonly');
-            const store = transaction.objectStore('records');
-            const index = store.index('babyId');
-            const request = index.getAll(babyId);
-            
-            request.onsuccess = () => {
-                const records = request.result
-                    .sort((a, b) => new Date(b.datetime) - new Date(a.datetime))
-                    .slice(0, limit);
-                resolve(records);
-            };
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得日期範圍內的記錄
-    getRecordsByDateRange(babyId, startDate, endDate) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['records'], 'readonly');
-            const store = transaction.objectStore('records');
-            const index = store.index('babyId');
-            const request = index.getAll(babyId);
-            
-            request.onsuccess = () => {
-                const records = request.result.filter(record => {
-                    const recordDate = new Date(record.datetime);
-                    return recordDate >= startDate && recordDate <= endDate;
-                });
-                resolve(records);
-            };
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 儲存里程碑到資料庫
-    saveMilestoneToDb(milestone) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['milestones'], 'readwrite');
-            const store = transaction.objectStore('milestones');
-            const request = store.add(milestone);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得寶寶的里程碑
-    getMilestonesByBaby(babyId, category = null) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['milestones'], 'readonly');
-            const store = transaction.objectStore('milestones');
-            const index = store.index('babyId');
-            const request = index.getAll(babyId);
-            
-            request.onsuccess = () => {
-                let milestones = request.result;
-                if (category && category !== 'all') {
-                    milestones = milestones.filter(m => m.category === category);
-                }
-                milestones.sort((a, b) => new Date(b.date) - new Date(a.date));
-                resolve(milestones);
-            };
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 儲存記憶到資料庫
-    saveMemoryToDb(memory) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['memories'], 'readwrite');
-            const store = transaction.objectStore('memories');
-            const request = store.add(memory);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得寶寶的記憶
-    getMemoriesByBaby(babyId, type = null) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['memories'], 'readonly');
-            const store = transaction.objectStore('memories');
-            const index = store.index('babyId');
-            const request = index.getAll(babyId);
-            
-            request.onsuccess = () => {
-                let memories = request.result;
-                if (type) {
-                    memories = memories.filter(m => m.type === type);
-                }
-                memories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                resolve(memories);
-            };
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得所有記錄
-    getAllRecords() {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['records'], 'readonly');
-            const store = transaction.objectStore('records');
-            const request = store.getAll();
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得所有里程碑
-    getAllMilestones() {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['milestones'], 'readonly');
-            const store = transaction.objectStore('milestones');
-            const request = store.getAll();
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    // 取得所有記憶
-    getAllMemories() {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(['memories'], 'readonly');
-            const store = transaction.objectStore('memories');
-            const request = store.getAll();
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
     }
 
     // 清空所有資料
     async clearAllData() {
-        const stores = ['babies', 'records', 'milestones', 'memories'];
+        const stores = ['children', 'records', 'milestones', 'memories'];
         
-        for (const storeName of stores) {
-            await new Promise((resolve, reject) => {
-                const transaction = this.db.transaction([storeName], 'readwrite');
-                const store = transaction.objectStore(storeName);
-                const request = store.clear();
-                
-                request.onsuccess = () => resolve();
-                request.onerror = () => reject(request.error);
-            });
+        for (const store of stores) {
+            const items = await this.db.getAll(store);
+            for (const item of items) {
+                await this.db.delete(store, item.id);
+            }
         }
+    }
+
+    // 初始化檔案預覽
+    initFilePreview() {
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.addEventListener('change', (e) => {
+                this.handleFilePreview(e.target);
+            });
+        });
+    }
+
+    // 處理檔案預覽
+    handleFilePreview(input) {
+        const previewContainer = document.getElementById(input.id + 'Preview');
+        if (!previewContainer) return;
+
+        previewContainer.innerHTML = '';
+
+        const files = Array.from(input.files);
+        files.forEach((file, index) => {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const item = document.createElement('div');
+                    item.className = 'photo-preview-item';
+                    item.innerHTML = `
+                        <img src="${e.target.result}" alt="預覽">
+                        <button type="button" class="photo-remove" onclick="this.parentElement.remove()">×</button>
+                    `;
+                    previewContainer.appendChild(item);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    // 清除照片預覽
+    clearPhotoPreview(container) {
+        container.querySelectorAll('.photo-preview').forEach(preview => {
+            preview.innerHTML = '';
+        });
+    }
+
+    // 初始化餵食類型切換
+    initFeedingTypeSwitch() {
+        const feedingTypeInputs = document.querySelectorAll('input[name="feedingType"]');
+        feedingTypeInputs.forEach(input => {
+            input.addEventListener('change', (e) => {
+                this.toggleFeedingFields(e.target.value);
+            });
+        });
+    }
+
+    // 切換餵食欄位
+    toggleFeedingFields(type) {
+        const breastFields = document.querySelector('.breast-fields');
+        const formulaFields = document.querySelector('.formula-fields');
+        const solidFields = document.querySelector('.solid-fields');
+
+        breastFields.style.display = type === 'breast' ? 'block' : 'none';
+        formulaFields.style.display = type === 'formula' ? 'block' : 'none';
+        solidFields.style.display = type === 'solid' ? 'block' : 'none';
+    }
+
+    // 初始化睡眠類型切換
+    initSleepTypeSwitch() {
+        const sleepTypeInputs = document.querySelectorAll('input[name="sleepType"]');
+        sleepTypeInputs.forEach(input => {
+            input.addEventListener('change', (e) => {
+                this.toggleSleepFields(e.target.value);
+            });
+        });
+    }
+
+    // 切換睡眠欄位
+    toggleSleepFields(type) {
+        const startFields = document.querySelector('.sleep-start-fields');
+        const endFields = document.querySelector('.sleep-end-fields');
+        const completeFields = document.querySelector('.sleep-complete-fields');
+
+        startFields.style.display = type === 'start' ? 'block' : 'none';
+        endFields.style.display = type === 'end' ? 'block' : 'none';
+        completeFields.style.display = type === 'complete' ? 'block' : 'none';
+    }
+
+    // 初始化健康類型切換
+    initHealthTypeSwitch() {
+        const healthTypeSelect = document.getElementById('healthType');
+        healthTypeSelect.addEventListener('change', (e) => {
+            this.toggleHealthFields(e.target.value);
+        });
+    }
+
+    // 切換健康欄位
+    toggleHealthFields(type) {
+        const fields = {
+            temperature: '.health-temperature-fields',
+            weight: '.health-weight-fields',
+            symptom: '.health-symptom-fields',
+            medication: '.health-medication-fields',
+            vaccination: '.health-vaccination-fields'
+        };
+
+        Object.values(fields).forEach(selector => {
+            const field = document.querySelector(selector);
+            if (field) field.style.display = 'none';
+        });
+
+        if (fields[type]) {
+            const field = document.querySelector(fields[type]);
+            if (field) field.style.display = 'block';
+        }
+    }
+
+    // 初始化排泄類型切換
+    initDiaperTypeSwitch() {
+        const diaperTypeInputs = document.querySelectorAll('input[name="diaperType"]');
+        diaperTypeInputs.forEach(input => {
+            input.addEventListener('change', () => {
+                this.toggleDiaperFields();
+            });
+        });
+    }
+
+    // 切換排泄欄位
+    toggleDiaperFields() {
+        const dirtyChecked = document.querySelector('input[name="diaperType"][value="dirty"]').checked;
+        const stoolFields = document.querySelector('.stool-fields');
+        stoolFields.style.display = dirtyChecked ? 'block' : 'none';
+    }
+
+    // 顯示Toast訊息
+    showToast(message, type = 'info') {
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        toastMessage.textContent = message;
+        toast.className = `toast show ${type}`;
+        
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, 3000);
     }
 }
 
-// === 應用程式入口點 ===
+// 工具函式
+class Utils {
+    // 格式化日期
+    static formatDate(date) {
+        return new Date(date).toLocaleDateString('zh-TW');
+    }
+
+    // 格式化時間
+    static formatTime(date) {
+        return new Date(date).toLocaleTimeString('zh-TW', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    }
+
+    // 格式化持續時間
+    static formatDuration(minutes) {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        
+        if (hours > 0) {
+            return `${hours}小時${mins}分鐘`;
+        } else {
+            return `${mins}分鐘`;
+        }
+    }
+
+    // 驗證表單
+    static validateForm(form) {
+        const requiredFields = form.querySelectorAll('input[required], select[required], textarea[required]');
+        
+        for (const field of requiredFields) {
+            if (!field.value.trim()) {
+                field.focus();
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    // 防抖函式
+    static debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    // 節流函式
+    static throttle(func, limit) {
+        let inThrottle;
+        return function(...args) {
+            if (!inThrottle) {
+                func.apply(this, args);
+                inThrottle = true;
+                setTimeout(() => inThrottle = false, limit);
+            }
+        };
+    }
+}
+
+// 當DOM載入完成時啟動應用
 document.addEventListener('DOMContentLoaded', () => {
-    window.babyTracker = new BabyTracker();
+    // 檢查瀏覽器支援
+    if (!window.indexedDB) {
+        alert('您的瀏覽器不支援IndexedDB，無法正常使用此應用');
+        return;
+    }
+
+    // 初始化應用
+    const app = new BabyTrackerApp();
+    
+    // 將應用實例暴露到全域，方便除錯
+    window.babyTrackerApp = app;
 });
 
-// 監聽系統顏色主題變化
-if (window.matchMedia) {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (localStorage.getItem('baby-tracker-theme') === 'auto') {
-            document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
-        }
+// 服務工作器註冊 (PWA支援)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+                console.log('SW registered: ', registration);
+            })
+            .catch((registrationError) => {
+                console.log('SW registration failed: ', registrationError);
+            });
     });
 }
+
+// 全域錯誤處理
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('未處理的Promise拒絕:', event.reason);
+    
+    // 顯示用戶友善的錯誤訊息
+    if (window.babyTrackerApp) {
+        window.babyTrackerApp.showToast('發生了一個錯誤，請重試', 'error');
+    }
+});
+
+window.addEventListener('error', (event) => {
+    console.error('全域錯誤:', event.error);
+    
+    // 顯示用戶友善的錯誤訊息
+    if (window.babyTrackerApp) {
+        window.babyTrackerApp.showToast('應用發生錯誤，請重新整理頁面', 'error');
+    }
+});
