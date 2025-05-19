@@ -858,6 +858,106 @@ function closeChildModal() {
     }
 }
 
+// 通用模態關閉函數
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('show');
+    }
+}
+
+// 本地存儲模式（無資料庫替代方案）
+const LocalStorage = {
+    children: [],
+    records: {},
+    
+    // 初始化本地存儲
+    init: function() {
+        console.log('初始化本地存儲模式...');
+        try {
+            const stored = localStorage.getItem('babyTrackerData');
+            if (stored) {
+                const data = JSON.parse(stored);
+                this.children = data.children || [];
+                this.records = data.records || {};
+                console.log('✓ 從localStorage載入數據');
+            }
+            return true;
+        } catch (error) {
+            console.error('localStorage初始化失敗:', error);
+            return false;
+        }
+    },
+    
+    // 保存到本地存儲
+    save: function() {
+        try {
+            const data = {
+                children: this.children,
+                records: this.records,
+                lastUpdated: new Date().toISOString()
+            };
+            localStorage.setItem('babyTrackerData', JSON.stringify(data));
+            return true;
+        } catch (error) {
+            console.error('保存到localStorage失敗:', error);
+            return false;
+        }
+    },
+    
+    // 添加孩子
+    addChild: function(childData) {
+        const id = Date.now(); // 簡單的ID生成
+        const child = {
+            id: id,
+            ...childData,
+            createdAt: new Date().toISOString()
+        };
+        this.children.push(child);
+        this.save();
+        return child;
+    },
+    
+    // 獲取所有孩子
+    getAllChildren: function() {
+        return this.children;
+    },
+    
+    // 獲取孩子
+    getChild: function(id) {
+        return this.children.find(child => child.id == id);
+    },
+    
+    // 更新孩子
+    updateChild: function(id, data) {
+        const index = this.children.findIndex(child => child.id == id);
+        if (index !== -1) {
+            this.children[index] = { ...this.children[index], ...data };
+            this.save();
+            return this.children[index];
+        }
+        return null;
+    },
+    
+    // 刪除孩子
+    deleteChild: function(id) {
+        const index = this.children.findIndex(child => child.id == id);
+        if (index !== -1) {
+            this.children.splice(index, 1);
+            // 刪除相關記錄
+            Object.keys(this.records).forEach(type => {
+                if (this.records[type]) {
+                    this.records[type] = this.records[type].filter(record => record.childId != id);
+                }
+            });
+            this.save();
+            return true;
+        }
+        return false;
+    }
+};
+
+// 修改保存孩子函數，支援本地存儲模式
 function saveChild(event) {
     event.preventDefault();
     
@@ -865,43 +965,105 @@ function saveChild(event) {
     const birthDate = document.getElementById('childBirthDate').value;
     const gender = document.getElementById('childGender').value;
     
-    console.log('保存孩子資料...', { name, birthDate, gender });
-    
-    if (!db) {
-        console.error('資料庫未初始化');
-        showToast('資料庫錯誤', 'error');
-        return;
-    }
+    console.log('保存孩子資料 (本地存儲模式)...', { name, birthDate, gender });
     
     const childData = {
         name: name,
         birthDate: birthDate,
-        gender: gender,
-        createdAt: new Date().toISOString()
+        gender: gender
     };
     
     try {
-        const transaction = db.transaction(['children'], 'readwrite');
+        const child = LocalStorage.addChild(childData);
+        console.log('✓ 孩子資料保存成功 (本地存儲)');
+        
+        currentChild = child;
+        showToast('添加成功', 'success');
+        closeChildModal();
+        loadChildrenFromLocal();
+        
+    } catch (error) {
+        console.error('保存孩子資料失敗:', error);
+        showToast('保存失敗', 'error');
+    }
+}
+
+// 從本地存儲載入孩子
+function loadChildrenFromLocal() {
+    console.log('從本地存儲載入孩子...');
+    
+    const children = LocalStorage.getAllChildren();
+    console.log(`✓ 找到 ${children.length} 個孩子記錄 (本地存儲)`);
+    
+    updateChildSelector(children);
+    
+    if (children.length > 0) {
+        if (!currentChild) {
+            currentChild = children[0];
+        }
+        showDashboard();
+    } else {
+        showEmptyState();
+    }
+}
+
+// 修改載入孩子函數，優先使用本地存儲
+function loadChildren() {
+    console.log('執行 loadChildren 函數...');
+    
+    if (!db) {
+        console.log('資料庫未連接，使用本地存儲模式');
+        loadChildrenFromLocal();
+        return;
+    }
+    
+    // 原來的資料庫代碼保持不變...
+    try {
+        console.log('準備創建 transaction...');
+        const transaction = db.transaction(['children'], 'readonly');
+        console.log('Transaction 創建成功');
+        
         const store = transaction.objectStore('children');
-        const request = store.add(childData);
+        console.log('ObjectStore 獲取成功');
+        
+        const request = store.getAll();
+        console.log('getAll 請求已發送');
         
         request.onsuccess = function() {
-            console.log('✓ 孩子資料保存成功');
-            childData.id = request.result;
-            currentChild = childData;
-            showToast('添加成功', 'success');
-            closeChildModal();
-            loadChildren();
+            const children = request.result;
+            console.log(`✓ 成功找到 ${children.length} 個孩子記錄`);
+            console.log('孩子列表:', children);
+            
+            updateChildSelector(children);
+            
+            if (children.length > 0) {
+                currentChild = children[0];
+                console.log('設定當前孩子:', currentChild.name);
+                showDashboard();
+            } else {
+                console.log('沒有孩子記錄，顯示空狀態');
+                showEmptyState();
+            }
         };
         
         request.onerror = function(error) {
-            console.error('保存失敗:', error);
-            showToast('保存失敗', 'error');
+            console.error('載入孩子列表失敗:', error);
+            console.error('錯誤詳細:', request.error);
+            console.log('回退到本地存儲模式');
+            loadChildrenFromLocal();
+        };
+        
+        transaction.onerror = function(error) {
+            console.error('Transaction 錯誤:', error);
+            console.log('回退到本地存儲模式');
+            loadChildrenFromLocal();
         };
         
     } catch (error) {
-        console.error('saveChild捕獲錯誤:', error);
-        showToast('保存失敗', 'error');
+        console.error('loadChildren 捕獲異常:', error);
+        console.error('錯誤堆疊:', error.stack);
+        console.log('回退到本地存儲模式');
+        loadChildrenFromLocal();
     }
 }
 
@@ -1063,8 +1225,18 @@ function initApp() {
         console.log('4. 初始化事件監聽器...');
         initEventListeners();
         
-        // 5. 初始化資料庫
-        console.log('5. 初始化資料庫...');
+        // 5. 初始化本地存儲
+        console.log('5. 初始化本地存儲...');
+        if (LocalStorage.init()) {
+            console.log('✓ 本地存儲初始化成功');
+            setTimeout(() => {
+                loadChildrenFromLocal();
+                hideLoadingScreen();
+            }, 100);
+        }
+        
+        // 6. 嘗試初始化資料庫（非阻塞）
+        console.log('6. 嘗試初始化資料庫（非阻塞）...');
         initDB();
         
         console.log('=== 應用初始化完成 ===');
@@ -1240,7 +1412,82 @@ if (document.readyState === 'loading') {
 window.initDB = initDB;
 window.loadChildren = loadChildren;
 window.showEmptyState = showEmptyState;
+window.LocalStorage = LocalStorage;
+
+// 簡化的除錯命令（直接暴露到全域）
+window.checkStyles = function() {
+    const computed = window.getComputedStyle(document.body);
+    console.log('body背景色:', computed.backgroundColor);
+    console.log('body字體:', computed.fontFamily);
+    console.log('CSS已注入:', !!document.getElementById('baby-tracker-styles'));
+};
+
+window.checkElements = function() {
+    const elements = ['app', 'childSelect', 'addChildBtn', 'todaySummary', 'themeToggle'];
+    elements.forEach(id => {
+        const element = document.getElementById(id);
+        console.log(`${id}:`, element ? '存在' : '不存在');
+    });
+};
+
+window.testDB = function() {
+    console.log('=== 資料庫狀態檢查 ===');
+    
+    if (window.db) {
+        console.log('✓ 資料庫已連接');
+        console.log('資料庫名稱:', window.db.name);
+        console.log('資料庫版本:', window.db.version);
+        
+        const stores = Array.from(window.db.objectStoreNames);
+        console.log('可用的表:', stores);
+    } else {
+        console.log('✗ 資料庫未連接');
+        console.log('本地存儲狀態:');
+        console.log('  孩子數量:', LocalStorage.children.length);
+        console.log('  記錄類型:', Object.keys(LocalStorage.records));
+    }
+};
+
+window.simulateData = function() {
+    console.log('模擬新增孩子資料...');
+    
+    // 使用本地存儲添加模擬孩子
+    const mockChild = LocalStorage.addChild({
+        name: '測試寶寶',
+        birthDate: '2024-01-01',
+        gender: 'boy'
+    });
+    
+    // 設定為當前孩子
+    window.currentChild = mockChild;
+    
+    // 重新載入界面
+    loadChildrenFromLocal();
+    
+    console.log('✅ 模擬資料已載入');
+    console.log('當前孩子:', window.currentChild);
+};
+
+window.resetApp = function() {
+    console.log('重置應用...');
+    
+    // 清除本地存儲
+    localStorage.removeItem('babyTrackerData');
+    LocalStorage.children = [];
+    LocalStorage.records = {};
+    
+    // 重置當前孩子
+    window.currentChild = null;
+    
+    // 重新載入
+    location.reload();
+};
 
 console.log('🍼 嬰幼兒照顧追蹤應用已載入');
-console.log('可用指令: debugCommands.checkStyles(), debugCommands.checkElements(), debugCommands.testDB()');
-console.log('資料庫指令: debugCommands.initDB(), debugCommands.forceResetDB()');
+console.log('📱 現在使用本地存儲模式 (localStorage)');
+console.log('🔧 可用除錯指令:');
+console.log('   checkStyles()    - 檢查CSS');
+console.log('   checkElements()  - 檢查DOM元素');
+console.log('   testDB()         - 檢查資料庫狀態');
+console.log('   simulateData()   - 建立測試數據');
+console.log('   resetApp()       - 重置應用');
