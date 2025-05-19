@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>寶寶照護追蹤 - Baby Care Tracker</title>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -13,23 +13,6 @@
         <div class="nav-container">
             <h1><i class="fas fa-baby"></i> 寶寶照護追蹤</h1>
             <div class="nav-controls">
-                <select id="timezoneSelector" class="timezone-selector">
-                    <option value="Asia/Taipei">台北 (GMT+8)</option>
-                    <option value="Asia/Tokyo">東京 (GMT+9)</option>
-                    <option value="Asia/Shanghai">上海 (GMT+8)</option>
-                    <option value="Asia/Hong_Kong">香港 (GMT+8)</option>
-                    <option value="Asia/Singapore">新加坡 (GMT+8)</option>
-                    <option value="Asia/Bangkok">曼谷 (GMT+7)</option>
-                    <option value="Asia/Jakarta">雅加達 (GMT+7)</option>
-                    <option value="Asia/Seoul">首爾 (GMT+9)</option>
-                    <option value="Australia/Sydney">雪梨 (GMT+10)</option>
-                    <option value="Europe/London">倫敦 (GMT+0)</option>
-                    <option value="Europe/Paris">巴黎 (GMT+1)</option>
-                    <option value="America/New_York">紐約 (GMT-5)</option>
-                    <option value="America/Los_Angeles">洛杉磯 (GMT-8)</option>
-                    <option value="America/Chicago">芝加哥 (GMT-6)</option>
-                    <option value="UTC">UTC (GMT+0)</option>
-                </select>
                 <select id="childSelector" class="child-selector">
                     <option value="">選擇寶寶</option>
                 </select>
@@ -560,6 +543,77 @@
         </div>
     </div>
 
+    <!-- 設定模態視窗 -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>應用程式設定</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="settingsForm" class="modal-body">
+                <div class="form-group">
+                    <label for="timezoneSelect">時區設定</label>
+                    <select id="timezoneSelect">
+                        <option value="Asia/Taipei">台北 (GMT+8)</option>
+                        <option value="Asia/Hong_Kong">香港 (GMT+8)</option>
+                        <option value="Asia/Singapore">新加坡 (GMT+8)</option>
+                        <option value="Asia/Kuala_Lumpur">吉隆坡 (GMT+8)</option>
+                        <option value="Asia/Bangkok">曼谷 (GMT+7)</option>
+                        <option value="Asia/Jakarta">雅加達 (GMT+7)</option>
+                        <option value="Asia/Tokyo">東京 (GMT+9)</option>
+                        <option value="Asia/Seoul">首爾 (GMT+9)</option>
+                        <option value="Asia/Shanghai">上海 (GMT+8)</option>
+                        <option value="Asia/Dubai">杜拜 (GMT+4)</option>
+                        <option value="Europe/London">倫敦 (GMT+0)</option>
+                        <option value="Europe/Paris">巴黎 (GMT+1)</option>
+                        <option value="Europe/Berlin">柏林 (GMT+1)</option>
+                        <option value="Europe/Rome">羅馬 (GMT+1)</option>
+                        <option value="America/New_York">紐約 (GMT-5)</option>
+                        <option value="America/Los_Angeles">洛杉磯 (GMT-8)</option>
+                        <option value="America/Chicago">芝加哥 (GMT-6)</option>
+                        <option value="America/Toronto">多倫多 (GMT-5)</option>
+                        <option value="Australia/Sydney">雪梨 (GMT+10)</option>
+                        <option value="Australia/Melbourne">墨爾本 (GMT+10)</option>
+                        <option value="Pacific/Auckland">奧克蘭 (GMT+12)</option>
+                    </select>
+                    <small class="form-help">選擇您所在的時區，所有時間顯示將根據此設定調整</small>
+                </div>
+                <div class="form-group">
+                    <label for="dateFormatSelect">日期格式</label>
+                    <select id="dateFormatSelect">
+                        <option value="zh-TW">繁體中文 (年/月/日)</option>
+                        <option value="en-US">美式 (月/日/年)</option>
+                        <option value="en-GB">英式 (日/月/年)</option>
+                        <option value="ja-JP">日式 (年月日)</option>
+                        <option value="iso">ISO (YYYY-MM-DD)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="timeFormatSelect">時間格式</label>
+                    <select id="timeFormatSelect">
+                        <option value="24">24小時制</option>
+                        <option value="12">12小時制</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="weekStartSelect">一週開始日</label>
+                    <select id="weekStartSelect">
+                        <option value="0">星期日</option>
+                        <option value="1">星期一</option>
+                    </select>
+                </div>
+                <div class="settings-info">
+                    <p><strong>目前時間：</strong> <span id="currentTimeDisplay"></span></p>
+                    <p><small>設定變更後將應用到所有新的記錄和顯示</small></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存設定</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- 確認刪除模態視窗 -->
     <div id="confirmModal" class="modal">
         <div class="modal-content">
@@ -586,7 +640,7 @@
     </div>
 
     <!-- 引入腳本 -->
-    <script src="./chart.min.js"></script>
-    <script src="./script.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
