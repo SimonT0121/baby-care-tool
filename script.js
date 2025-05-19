@@ -9,6 +9,7 @@
 let currentChildId = null;
 let db = null;
 let charts = {};
+let userTimezone = 'Asia/Taipei'; // 預設時區
 
 // 數據庫配置
 const DB_NAME = 'BabyCareDB';
@@ -36,6 +37,9 @@ async function initializeApp() {
         
         // 載入主題設置
         loadTheme();
+        
+        // 載入時區設置
+        loadTimezone();
         
         // 載入寶寶列表
         await loadChildren();
@@ -205,6 +209,13 @@ function setupEventListeners() {
     // 寶寶選擇器
     document.getElementById('childSelector').addEventListener('change', function() {
         currentChildId = this.value ? parseInt(this.value) : null;
+        refreshCurrentPage();
+    });
+    
+    // 時區選擇器
+    document.getElementById('timezoneSelector').addEventListener('change', function() {
+        userTimezone = this.value;
+        saveTimezone();
         refreshCurrentPage();
     });
     
@@ -550,8 +561,8 @@ async function handleChildFormSubmit(e) {
             birthDate: document.getElementById('childBirthDate').value,
             gender: document.getElementById('childGender').value,
             notes: document.getElementById('childNotes').value,
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         // 處理照片
@@ -618,7 +629,7 @@ function openFeedingModal(record = null) {
         delete form.dataset.editId;
         
         // 設置預設時間為現在
-        const now = new Date().toISOString().slice(0, 16);
+        const now = toLocalDateTimeString();
         document.getElementById('feedingStartTime').value = now;
         
         toggleFeedingFields('breast');
@@ -655,8 +666,8 @@ async function handleFeedingFormSubmit(e) {
             childId: currentChildId,
             type: document.getElementById('feedingType').value,
             notes: document.getElementById('feedingNotes').value,
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         if (feedingData.type === 'breast') {
@@ -666,7 +677,7 @@ async function handleFeedingFormSubmit(e) {
         } else {
             feedingData.quantity = parseFloat(document.getElementById('feedingQuantity').value) || 0;
             feedingData.unit = document.getElementById('feedingUnit').value;
-            feedingData.date = new Date().toISOString().split('T')[0];
+            feedingData.date = toLocalDateString();
         }
         
         if (isEdit) {
@@ -806,7 +817,7 @@ function openSleepModal(record = null) {
         delete form.dataset.editId;
         
         // 設置預設開始時間為現在
-        const now = new Date().toISOString().slice(0, 16);
+        const now = toLocalDateTimeString();
         document.getElementById('sleepStartTime').value = now;
     }
     
@@ -829,8 +840,8 @@ async function handleSleepFormSubmit(e) {
             endTime: document.getElementById('sleepEndTime').value || null,
             notes: document.getElementById('sleepNotes').value,
             date: document.getElementById('sleepStartTime').value.split('T')[0],
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         if (isEdit) {
@@ -963,7 +974,7 @@ function openDiaperModal(record = null) {
         delete form.dataset.editId;
         
         // 設置預設時間為現在
-        const now = new Date().toISOString().slice(0, 16);
+        const now = toLocalDateTimeString();
         document.getElementById('diaperTime').value = now;
     }
     
@@ -986,8 +997,8 @@ async function handleDiaperFormSubmit(e) {
             time: document.getElementById('diaperTime').value,
             notes: document.getElementById('diaperNotes').value,
             date: document.getElementById('diaperTime').value.split('T')[0],
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         if (isEdit) {
@@ -1121,7 +1132,7 @@ function openHealthModal(record = null) {
         delete form.dataset.editId;
         
         // 設置預設時間為現在
-        const now = new Date().toISOString().slice(0, 16);
+        const now = toLocalDateTimeString();
         document.getElementById('healthDate').value = now;
         
         toggleHealthFields('vaccination');
@@ -1157,8 +1168,8 @@ async function handleHealthFormSubmit(e) {
             date: document.getElementById('healthDate').value,
             title: document.getElementById('healthTitle').value,
             notes: document.getElementById('healthNotes').value,
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         if (healthData.type === 'temperature') {
@@ -1350,8 +1361,8 @@ async function handleMilestoneFormSubmit(e) {
             achievedDate: document.getElementById('milestoneDate').value || null,
             notes: document.getElementById('milestoneNotes').value,
             achieved: !!document.getElementById('milestoneDate').value,
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         if (isEdit) {
@@ -1490,10 +1501,10 @@ async function markMilestoneAchieved(title, category) {
             childId: currentChildId,
             category: category,
             title: title,
-            achievedDate: new Date().toISOString().split('T')[0],
+            achievedDate: toLocalDateString(),
             achieved: true,
             notes: '',
-            createdAt: new Date().toISOString()
+            createdAt: toUserTimezoneISOString()
         };
         
         await addRecord('milestones', milestoneData);
@@ -1560,7 +1571,7 @@ function openActivityModal(record = null) {
         delete form.dataset.editId;
         
         // 設置預設時間為現在
-        const now = new Date().toISOString().slice(0, 16);
+        const now = toLocalDateTimeString();
         document.getElementById('activityDate').value = now;
         
         toggleActivityFields('bath');
@@ -1598,8 +1609,8 @@ async function handleActivityFormSubmit(e) {
             duration: parseInt(document.getElementById('activityDuration').value) || null,
             mood: document.getElementById('activityMood').value || null,
             notes: document.getElementById('activityNotes').value,
-            createdAt: isEdit ? undefined : new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            createdAt: isEdit ? undefined : toUserTimezoneISOString(),
+            updatedAt: toUserTimezoneISOString()
         };
         
         // 處理照片
@@ -2032,7 +2043,7 @@ async function loadTodaySummary() {
     }
     
     try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = toLocalDateString();
         
         // 獲取今日各類記錄
         const [feedingRecords, sleepRecords, diaperRecords, healthRecords] = await Promise.all([
@@ -2223,14 +2234,16 @@ function toggleTheme() {
     localStorage.setItem('theme', newTheme);
 }
 
-// 載入主題設定
-function loadTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    document.body.setAttribute('data-theme', savedTheme);
-    
-    // 更新圖示
-    const icon = document.querySelector('#themeToggle i');
-    icon.className = savedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+// 載入時區設定
+function loadTimezone() {
+    const savedTimezone = localStorage.getItem('timezone') || 'Asia/Taipei';
+    userTimezone = savedTimezone;
+    document.getElementById('timezoneSelector').value = savedTimezone;
+}
+
+// 儲存時區設定
+function saveTimezone() {
+    localStorage.setItem('timezone', userTimezone);
 }
 
 /**
@@ -2253,7 +2266,7 @@ async function exportData() {
             health_records: await getAllRecords('health_records'),
             milestones: await getAllRecords('milestones'),
             activities: await getAllRecords('activities'),
-            exportDate: new Date().toISOString(),
+            exportDate: toUserTimezoneISOString(),
             version: '1.0'
         };
         
@@ -2264,7 +2277,7 @@ async function exportData() {
         
         const link = document.createElement('a');
         link.href = url;
-        link.download = `baby-care-backup-${new Date().toISOString().split('T')[0]}.json`;
+        link.download = `baby-care-backup-${toLocalDateString()}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2406,7 +2419,30 @@ function clearFormValidation(form) {
  * =================================================
  */
 
-// 格式化日期時間
+// 獲取用戶時區時間
+function getUserTimezoneTime(date = new Date()) {
+    return new Date(date.toLocaleString('en-US', { timeZone: userTimezone }));
+}
+
+// 格式化為用戶時區ISO字串
+function toUserTimezoneISOString(date = new Date()) {
+    const userTime = getUserTimezoneTime(date);
+    return userTime.toISOString();
+}
+
+// 格式化為本地datetime-local格式
+function toLocalDateTimeString(date = new Date()) {
+    const userTime = getUserTimezoneTime(date);
+    return userTime.toISOString().slice(0, 16);
+}
+
+// 格式化為本地日期格式
+function toLocalDateString(date = new Date()) {
+    const userTime = getUserTimezoneTime(date);
+    return userTime.toISOString().slice(0, 10);
+}
+
+// 格式化日期時間（使用用戶時區）
 function formatDateTime(dateTime) {
     const date = new Date(dateTime);
     return date.toLocaleString('zh-TW', {
@@ -2414,25 +2450,28 @@ function formatDateTime(dateTime) {
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: userTimezone
     });
 }
 
-// 格式化日期
+// 格式化日期（使用用戶時區）
 function formatDate(date) {
     const d = new Date(date);
     return d.toLocaleDateString('zh-TW', {
         month: '2-digit',
-        day: '2-digit'
+        day: '2-digit',
+        timeZone: userTimezone
     });
 }
 
-// 格式化時間
+// 格式化時間（使用用戶時區）
 function formatTime(dateTime) {
     const date = new Date(dateTime);
     return date.toLocaleTimeString('zh-TW', {
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: userTimezone
     });
 }
 
