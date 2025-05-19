@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>寶寶照護追蹤 - Baby Care Tracker</title>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -13,6 +13,23 @@
         <div class="nav-container">
             <h1><i class="fas fa-baby"></i> 寶寶照護追蹤</h1>
             <div class="nav-controls">
+                <select id="timezoneSelector" class="timezone-selector">
+                    <option value="Asia/Taipei">台北 (GMT+8)</option>
+                    <option value="Asia/Tokyo">東京 (GMT+9)</option>
+                    <option value="Asia/Shanghai">上海 (GMT+8)</option>
+                    <option value="Asia/Hong_Kong">香港 (GMT+8)</option>
+                    <option value="Asia/Singapore">新加坡 (GMT+8)</option>
+                    <option value="Asia/Bangkok">曼谷 (GMT+7)</option>
+                    <option value="Asia/Jakarta">雅加達 (GMT+7)</option>
+                    <option value="Asia/Seoul">首爾 (GMT+9)</option>
+                    <option value="Australia/Sydney">雪梨 (GMT+10)</option>
+                    <option value="Europe/London">倫敦 (GMT+0)</option>
+                    <option value="Europe/Paris">巴黎 (GMT+1)</option>
+                    <option value="America/New_York">紐約 (GMT-5)</option>
+                    <option value="America/Los_Angeles">洛杉磯 (GMT-8)</option>
+                    <option value="America/Chicago">芝加哥 (GMT-6)</option>
+                    <option value="UTC">UTC (GMT+0)</option>
+                </select>
                 <select id="childSelector" class="child-selector">
                     <option value="">選擇寶寶</option>
                 </select>
@@ -569,7 +586,7 @@
     </div>
 
     <!-- 引入腳本 -->
-    <script src="./Chart.min.js"></script>
-    <script src="./script.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
