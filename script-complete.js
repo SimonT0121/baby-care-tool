@@ -505,59 +505,78 @@ function initDB() {
     if (typeof indexedDB === 'undefined') {
         console.error('瀏覽器不支援 IndexedDB');
         showToast('瀏覽器不支援離線存儲', 'error');
+        showEmptyState();
         return;
     }
     
-    // 刪除舊的資料庫，重新創建
-    const deleteRequest = indexedDB.deleteDatabase('BabyTrackerDB');
-    
-    deleteRequest.onsuccess = function() {
-        console.log('舊資料庫已刪除，重新創建...');
-        createNewDatabase();
-    };
-    
-    deleteRequest.onerror = function() {
-        console.log('無法刪除舊資料庫，直接創建新的...');
-        createNewDatabase();
-    };
+    // 直接創建資料庫，不刪除舊的
+    createNewDatabase();
 }
 
 function createNewDatabase() {
+    console.log('開始創建資料庫...');
+    
     const request = indexedDB.open('BabyTrackerDB', 1);
     
     request.onerror = function(event) {
         console.error('資料庫開啟失敗:', event.target.error);
         showToast('資料庫初始化失敗', 'error');
+        // 即使資料庫失敗也顯示UI
+        showEmptyState();
+    };
+    
+    request.onblocked = function(event) {
+        console.warn('資料庫被阻擋，可能有其他標籤頁在使用');
+        showToast('資料庫被其他頁面佔用，請關閉其他標籤頁', 'warning');
     };
     
     request.onupgradeneeded = function(event) {
+        console.log('開始升級/創建資料庫表...');
         db = event.target.result;
-        console.log('創建資料庫表...');
         
-        // 創建孩子資料表
-        const childrenStore = db.createObjectStore('children', { keyPath: 'id', autoIncrement: true });
-        childrenStore.createIndex('name', 'name', { unique: false });
-        console.log('✓ children表已創建');
-        
-        // 創建其他記錄表
-        const recordTypes = ['feeding', 'sleep', 'diaper', 'health', 'milestones', 'interactions', 'activities'];
-        recordTypes.forEach(type => {
-            const store = db.createObjectStore(type, { keyPath: 'id', autoIncrement: true });
-            store.createIndex('childId', 'childId', { unique: false });
-            store.createIndex('dateTime', 'dateTime', { unique: false });
-            console.log(`✓ ${type}表已創建`);
-        });
+        try {
+            // 創建孩子資料表
+            if (!db.objectStoreNames.contains('children')) {
+                const childrenStore = db.createObjectStore('children', { keyPath: 'id', autoIncrement: true });
+                childrenStore.createIndex('name', 'name', { unique: false });
+                console.log('✓ children表已創建');
+            }
+            
+            // 創建其他記錄表
+            const recordTypes = ['feeding', 'sleep', 'diaper', 'health', 'milestones', 'interactions', 'activities'];
+            recordTypes.forEach(type => {
+                if (!db.objectStoreNames.contains(type)) {
+                    const store = db.createObjectStore(type, { keyPath: 'id', autoIncrement: true });
+                    store.createIndex('childId', 'childId', { unique: false });
+                    store.createIndex('dateTime', 'dateTime', { unique: false });
+                    console.log(`✓ ${type}表已創建`);
+                }
+            });
+            
+            console.log('✓ 所有資料庫表創建完成');
+            
+        } catch (error) {
+            console.error('創建資料庫表時發生錯誤:', error);
+            showToast('資料庫表創建失敗', 'error');
+        }
     };
     
     request.onsuccess = function(event) {
         db = event.target.result;
-        console.log('✓ 資料庫開啟成功');
+        console.log('✓ 資料庫成功連接');
+        window.db = db; // 讓除錯工具可以存取
+        
+        // 設定資料庫錯誤處理
+        db.onerror = function(event) {
+            console.error('資料庫錯誤:', event.target.error);
+        };
         
         // 確保在資料庫完全初始化後再執行其他操作
         setTimeout(() => {
+            console.log('開始載入資料...');
             loadChildren();
             hideLoadingScreen();
-        }, 200);
+        }, 100);
     };
 }
 
@@ -1023,18 +1042,69 @@ window.debugCommands = {
     },
     
     testDB: function() {
+        console.log('=== 資料庫狀態檢查 ===');
+        
         if (window.db) {
-            console.log('資料庫已連接');
+            console.log('✓ 資料庫已連接');
+            console.log('資料庫名稱:', window.db.name);
+            console.log('資料庫版本:', window.db.version);
+            
             const stores = Array.from(window.db.objectStoreNames);
             console.log('可用的表:', stores);
+            
+            // 測試children表
+            if (stores.includes('children')) {
+                try {
+                    const transaction = window.db.transaction(['children'], 'readonly');
+                    const store = transaction.objectStore('children');
+                    const countRequest = store.count();
+                    
+                    countRequest.onsuccess = function() {
+                        console.log(`children表中有 ${countRequest.result} 筆記錄`);
+                    };
+                    
+                    countRequest.onerror = function(error) {
+                        console.error('查詢children表失敗:', error);
+                    };
+                } catch (error) {
+                    console.error('存取children表時發生錯誤:', error);
+                }
+            } else {
+                console.error('✗ children表不存在');
+            }
         } else {
-            console.log('資料庫未連接');
+            console.error('✗ 資料庫未連接');
+            console.log('嘗試重新初始化資料庫...');
+            // 嘗試重新初始化
+            window.initDB();
         }
     },
     
     reinit: function() {
         console.log('重新初始化應用...');
         initApp();
+    },
+    
+    initDB: function() {
+        console.log('手動初始化資料庫...');
+        initDB();
+    },
+    
+    forceResetDB: function() {
+        console.log('強制重置資料庫...');
+        if (window.db) {
+            window.db.close();
+        }
+        const deleteRequest = indexedDB.deleteDatabase('BabyTrackerDB');
+        deleteRequest.onsuccess = function() {
+            console.log('✓ 舊資料庫已刪除');
+            setTimeout(() => {
+                initDB();
+            }, 500);
+        };
+        deleteRequest.onerror = function(error) {
+            console.error('刪除資料庫失敗:', error);
+        };
     }
 };
 
@@ -1045,5 +1115,11 @@ if (document.readyState === 'loading') {
     initApp();
 }
 
+// 將重要函數暴露到全域作用域以便除錯
+window.initDB = initDB;
+window.loadChildren = loadChildren;
+window.showEmptyState = showEmptyState;
+
 console.log('🍼 嬰幼兒照顧追蹤應用已載入');
-console.log('可用指令: debugCommands.checkStyles(), debugCommands.checkElements(), debugCommands.testDB(), debugCommands.reinit()');
+console.log('可用指令: debugCommands.checkStyles(), debugCommands.checkElements(), debugCommands.testDB()');
+console.log('資料庫指令: debugCommands.initDB(), debugCommands.forceResetDB()');
