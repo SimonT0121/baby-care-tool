@@ -3,447 +3,590 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶寶照護小幫手</title>
-    <link rel="stylesheet" href="./style.css">
-    <!-- Chart.js CDN -->
-    <script src="./chart.min.js"></script>
+    <title>寶寶照護追蹤 - Baby Care Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
-    <!-- 導覽列 -->
-    <nav class="navbar">
+    <!-- 頂部導航欄 -->
+    <header class="header">
         <div class="nav-container">
-            <div class="nav-brand">
-                <span class="nav-icon">👶</span>
-                <span class="nav-title">寶寶照護小幫手</span>
-            </div>
+            <h1><i class="fas fa-baby"></i> 寶寶照護追蹤</h1>
             <div class="nav-controls">
-                <button id="themeToggle" class="theme-toggle" aria-label="切換主題">🌙</button>
-                <button id="settingsBtn" class="nav-btn" aria-label="設定">⚙️</button>
+                <select id="timezoneSelector" class="timezone-selector">
+                    <option value="Asia/Taipei">台北 (GMT+8)</option>
+                    <option value="Asia/Tokyo">東京 (GMT+9)</option>
+                    <option value="Asia/Shanghai">上海 (GMT+8)</option>
+                    <option value="Asia/Hong_Kong">香港 (GMT+8)</option>
+                    <option value="Asia/Singapore">新加坡 (GMT+8)</option>
+                    <option value="Asia/Bangkok">曼谷 (GMT+7)</option>
+                    <option value="Asia/Jakarta">雅加達 (GMT+7)</option>
+                    <option value="Asia/Seoul">首爾 (GMT+9)</option>
+                    <option value="Australia/Sydney">雪梨 (GMT+10)</option>
+                    <option value="Europe/London">倫敦 (GMT+0)</option>
+                    <option value="Europe/Paris">巴黎 (GMT+1)</option>
+                    <option value="America/New_York">紐約 (GMT-5)</option>
+                    <option value="America/Los_Angeles">洛杉磯 (GMT-8)</option>
+                    <option value="America/Chicago">芝加哥 (GMT-6)</option>
+                    <option value="UTC">UTC (GMT+0)</option>
+                </select>
+                <select id="childSelector" class="child-selector">
+                    <option value="">選擇寶寶</option>
+                </select>
+                <button id="themeToggle" class="theme-toggle" title="切換主題">
+                    <i class="fas fa-moon"></i>
+                </button>
             </div>
+        </div>
+    </header>
+
+    <!-- 主要導航 -->
+    <nav class="main-nav">
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-page="dashboard">
+                <i class="fas fa-tachometer-alt"></i>
+                <span>總覽</span>
+            </button>
+            <button class="nav-tab" data-page="feeding">
+                <i class="fas fa-baby-carriage"></i>
+                <span>餵食</span>
+            </button>
+            <button class="nav-tab" data-page="sleep">
+                <i class="fas fa-bed"></i>
+                <span>睡眠</span>
+            </button>
+            <button class="nav-tab" data-page="diaper">
+                <i class="fas fa-child"></i>
+                <span>尿布</span>
+            </button>
+            <button class="nav-tab" data-page="health">
+                <i class="fas fa-stethoscope"></i>
+                <span>健康</span>
+            </button>
+            <button class="nav-tab" data-page="milestones">
+                <i class="fas fa-trophy"></i>
+                <span>發展</span>
+            </button>
+            <button class="nav-tab" data-page="activities">
+                <i class="fas fa-heart"></i>
+                <span>活動</span>
+            </button>
+            <button class="nav-tab" data-page="statistics">
+                <i class="fas fa-chart-line"></i>
+                <span>統計</span>
+            </button>
         </div>
     </nav>
 
-    <!-- 主要內容 -->
-    <main class="main-container">
-        <!-- 兒童選擇器 -->
-        <div id="childSelector" class="child-selector">
-            <div class="selector-header">
-                <h2>選擇寶寶</h2>
-                <button id="addChildBtn" class="add-child-btn">+ 新增寶寶</button>
-            </div>
-            <div id="childList" class="child-list">
-                <!-- 動態生成兒童卡片 -->
-            </div>
-        </div>
-
-        <!-- 主控制面板 -->
-        <div id="mainDashboard" class="dashboard" style="display: none;">
-            <!-- 兒童資訊卡片 -->
-            <div class="child-info-card">
-                <div class="child-photo">
-                    <img id="currentChildPhoto" src="" alt="寶寶照片" style="display: none;">
-                    <div id="childPhotoPlaceholder" class="photo-placeholder">📷</div>
-                </div>
-                <div class="child-details">
-                    <h2 id="currentChildName"></h2>
-                    <p id="currentChildAge"></p>
-                    <p id="currentChildGender"></p>
-                </div>
-                <div class="child-actions">
-                    <button id="editChildBtn" class="action-btn">編輯</button>
-                    <button id="switchChildBtn" class="action-btn">切換寶寶</button>
-                </div>
+    <!-- 主要內容區域 -->
+    <main class="main-content">
+        <!-- 總覽頁面 -->
+        <div id="dashboard" class="page active">
+            <div class="welcome-section">
+                <h2>歡迎使用寶寶照護追蹤</h2>
+                <p>記錄您寶寶的每一個成長時刻</p>
             </div>
 
-            <!-- 快速記錄區 -->
-            <div class="quick-record-section">
-                <h3>快速記錄</h3>
-                <div class="quick-buttons">
-                    <button class="quick-btn" data-type="feeding">🍼 餵食</button>
-                    <button class="quick-btn" data-type="sleep">😴 睡眠</button>
-                    <button class="quick-btn" data-type="diaper">🧷 尿布</button>
-                    <button class="quick-btn" data-type="activity">🎮 活動</button>
+            <!-- 寶寶管理區塊 -->
+            <section class="card children-management">
+                <h3><i class="fas fa-users"></i> 寶寶管理</h3>
+                <div class="children-list" id="childrenList">
+                    <!-- 動態生成寶寶列表 -->
                 </div>
-            </div>
-
-            <!-- 功能選單 -->
-            <div class="feature-menu">
-                <div class="menu-grid">
-                    <button class="menu-item" data-section="records">
-                        <span class="menu-icon">📝</span>
-                        <span class="menu-label">記錄管理</span>
-                    </button>
-                    <button class="menu-item" data-section="health">
-                        <span class="menu-icon">🏥</span>
-                        <span class="menu-label">健康記錄</span>
-                    </button>
-                    <button class="menu-item" data-section="milestones">
-                        <span class="menu-icon">🎯</span>
-                        <span class="menu-label">發展里程碑</span>
-                    </button>
-                    <button class="menu-item" data-section="interaction">
-                        <span class="menu-icon">💝</span>
-                        <span class="menu-label">親子互動</span>
-                    </button>
-                    <button class="menu-item" data-section="charts">
-                        <span class="menu-icon">📊</span>
-                        <span class="menu-label">統計圖表</span>
-                    </button>
-                    <button class="menu-item" data-section="backup">
-                        <span class="menu-icon">💾</span>
-                        <span class="menu-label">備份還原</span>
-                    </button>
-                </div>
-            </div>
+                <button class="btn btn-primary" id="addChildBtn">
+                    <i class="fas fa-plus"></i> 新增寶寶
+                </button>
+            </section>
 
             <!-- 今日摘要 -->
-            <div class="daily-summary">
-                <h3>今日摘要</h3>
-                <div id="todaySummary" class="summary-content">
+            <section class="card today-summary">
+                <h3><i class="fas fa-calendar-day"></i> 今日摘要</h3>
+                <div id="todaySummary" class="summary-grid">
                     <!-- 動態生成今日摘要 -->
                 </div>
+            </section>
+
+            <!-- 快速記錄 -->
+            <section class="card quick-record">
+                <h3><i class="fas fa-plus-circle"></i> 快速記錄</h3>
+                <div class="quick-buttons">
+                    <button class="quick-btn" data-type="feeding">
+                        <i class="fas fa-bottle"></i>
+                        <span>餵食</span>
+                    </button>
+                    <button class="quick-btn" data-type="sleep">
+                        <i class="fas fa-bed"></i>
+                        <span>睡眠</span>
+                    </button>
+                    <button class="quick-btn" data-type="diaper">
+                        <i class="fas fa-baby"></i>
+                        <span>換尿布</span>
+                    </button>
+                    <button class="quick-btn" data-type="health">
+                        <i class="fas fa-thermometer"></i>
+                        <span>體溫</span>
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- 餵食頁面 -->
+        <div id="feeding" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-bottle"></i> 餵食記錄</h2>
+                <button class="btn btn-primary" id="addFeedingBtn">
+                    <i class="fas fa-plus"></i> 新增記錄
+                </button>
+            </div>
+            <div id="feedingList" class="records-list">
+                <!-- 動態生成餵食記錄 -->
             </div>
         </div>
 
-        <!-- 各功能區塊 -->
-        <!-- 記錄管理 -->
-        <div id="recordsSection" class="content-section" style="display: none;">
-            <div class="section-header">
-                <h2>記錄管理</h2>
-                <button class="back-btn">← 返回</button>
+        <!-- 睡眠頁面 -->
+        <div id="sleep" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-bed"></i> 睡眠記錄</h2>
+                <button class="btn btn-primary" id="addSleepBtn">
+                    <i class="fas fa-plus"></i> 新增記錄
+                </button>
             </div>
-            
-            <div class="record-tabs">
-                <button class="tab-btn active" data-tab="feeding">餵食記錄</button>
-                <button class="tab-btn" data-tab="sleep">睡眠記錄</button>
-                <button class="tab-btn" data-tab="diaper">尿布記錄</button>
-                <button class="tab-btn" data-tab="activity">日常活動</button>
-            </div>
-
-            <div class="record-content">
-                <!-- 餵食記錄 -->
-                <div id="feedingTab" class="tab-content active">
-                    <div class="record-controls">
-                        <button id="addFeedingBtn" class="add-record-btn">+ 新增餵食記錄</button>
-                    </div>
-                    <div id="feedingList" class="record-list">
-                        <!-- 動態生成餵食記錄 -->
-                    </div>
-                </div>
-
-                <!-- 睡眠記錄 -->
-                <div id="sleepTab" class="tab-content">
-                    <div class="record-controls">
-                        <button id="addSleepBtn" class="add-record-btn">+ 新增睡眠記錄</button>
-                    </div>
-                    <div id="sleepList" class="record-list">
-                        <!-- 動態生成睡眠記錄 -->
-                    </div>
-                </div>
-
-                <!-- 尿布記錄 -->
-                <div id="diaperTab" class="tab-content">
-                    <div class="record-controls">
-                        <button id="addDiaperBtn" class="add-record-btn">+ 新增尿布記錄</button>
-                    </div>
-                    <div id="diaperList" class="record-list">
-                        <!-- 動態生成尿布記錄 -->
-                    </div>
-                </div>
-
-                <!-- 日常活動 -->
-                <div id="activityTab" class="tab-content">
-                    <div class="record-controls">
-                        <button id="addActivityBtn" class="add-record-btn">+ 新增活動記錄</button>
-                    </div>
-                    <div id="activityList" class="record-list">
-                        <!-- 動態生成活動記錄 -->
-                    </div>
-                </div>
+            <div id="sleepList" class="records-list">
+                <!-- 動態生成睡眠記錄 -->
             </div>
         </div>
 
-        <!-- 健康記錄 -->
-        <div id="healthSection" class="content-section" style="display: none;">
-            <div class="section-header">
-                <h2>健康記錄</h2>
-                <button class="back-btn">← 返回</button>
+        <!-- 尿布頁面 -->
+        <div id="diaper" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-child"></i> 尿布記錄</h2>
+                <button class="btn btn-primary" id="addDiaperBtn">
+                    <i class="fas fa-plus"></i> 新增記錄
+                </button>
             </div>
-            
-            <div class="health-tabs">
-                <button class="tab-btn active" data-tab="vaccination">疫苗記錄</button>
-                <button class="tab-btn" data-tab="medication">用藥記錄</button>
-                <button class="tab-btn" data-tab="illness">疾病記錄</button>
-                <button class="tab-btn" data-tab="checkup">健檢記錄</button>
-            </div>
-
-            <div class="health-content">
-                <!-- 各健康記錄標籤頁 -->
-                <div id="vaccinationTab" class="tab-content active">
-                    <div class="record-controls">
-                        <button id="addVaccinationBtn" class="add-record-btn">+ 新增疫苗記錄</button>
-                    </div>
-                    <div id="vaccinationList" class="record-list"></div>
-                </div>
-
-                <div id="medicationTab" class="tab-content">
-                    <div class="record-controls">
-                        <button id="addMedicationBtn" class="add-record-btn">+ 新增用藥記錄</button>
-                    </div>
-                    <div id="medicationList" class="record-list"></div>
-                </div>
-
-                <div id="illnessTab" class="tab-content">
-                    <div class="record-controls">
-                        <button id="addIllnessBtn" class="add-record-btn">+ 新增疾病記錄</button>
-                    </div>
-                    <div id="illnessList" class="record-list"></div>
-                </div>
-
-                <div id="checkupTab" class="tab-content">
-                    <div class="record-controls">
-                        <button id="addCheckupBtn" class="add-record-btn">+ 新增健檢記錄</button>
-                    </div>
-                    <div id="checkupList" class="record-list"></div>
-                </div>
+            <div id="diaperList" class="records-list">
+                <!-- 動態生成尿布記錄 -->
             </div>
         </div>
 
-        <!-- 發展里程碑 -->
-        <div id="milestonesSection" class="content-section" style="display: none;">
-            <div class="section-header">
-                <h2>發展里程碑</h2>
-                <button class="back-btn">← 返回</button>
+        <!-- 健康頁面 -->
+        <div id="health" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-stethoscope"></i> 健康記錄</h2>
+                <button class="btn btn-primary" id="addHealthBtn">
+                    <i class="fas fa-plus"></i> 新增記錄
+                </button>
             </div>
-            
-            <div class="milestone-controls">
-                <button id="addMilestoneBtn" class="add-record-btn">+ 自訂里程碑</button>
+            <div id="healthList" class="records-list">
+                <!-- 動態生成健康記錄 -->
             </div>
+        </div>
 
-            <div class="milestone-categories">
+        <!-- 發展里程碑頁面 -->
+        <div id="milestones" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-trophy"></i> 發展里程碑</h2>
+                <button class="btn btn-primary" id="addMilestoneBtn">
+                    <i class="fas fa-plus"></i> 新增里程碑
+                </button>
+            </div>
+            <div class="milestones-categories">
                 <div class="category-tabs">
-                    <button class="tab-btn active" data-category="motor">大動作發展</button>
-                    <button class="tab-btn" data-category="language">語言發展</button>
-                    <button class="tab-btn" data-category="social">社交發展</button>
-                    <button class="tab-btn" data-category="cognitive">認知發展</button>
-                    <button class="tab-btn" data-category="selfcare">自理發展</button>
-                    <button class="tab-btn" data-category="custom">自訂里程碑</button>
+                    <button class="category-tab active" data-category="motor">動作發展</button>
+                    <button class="category-tab" data-category="language">語言發展</button>
+                    <button class="category-tab" data-category="social">社交發展</button>
+                    <button class="category-tab" data-category="cognitive">認知發展</button>
+                    <button class="category-tab" data-category="selfcare">自理能力</button>
+                    <button class="category-tab" data-category="custom">自訂</button>
                 </div>
-
-                <div id="milestoneList" class="milestone-list">
-                    <!-- 動態生成里程碑 -->
-                </div>
+            </div>
+            <div id="milestonesList" class="records-list">
+                <!-- 動態生成里程碑記錄 -->
             </div>
         </div>
 
-        <!-- 親子互動 -->
-        <div id="interactionSection" class="content-section" style="display: none;">
-            <div class="section-header">
-                <h2>親子互動記錄</h2>
-                <button class="back-btn">← 返回</button>
+        <!-- 活動頁面 -->
+        <div id="activities" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-heart"></i> 日常活動</h2>
+                <button class="btn btn-primary" id="addActivityBtn">
+                    <i class="fas fa-plus"></i> 新增活動
+                </button>
             </div>
-            
-            <div class="interaction-controls">
-                <button id="addInteractionBtn" class="add-record-btn">+ 新增互動記錄</button>
-            </div>
-
-            <div id="interactionList" class="interaction-list">
-                <!-- 動態生成互動記錄 -->
+            <div id="activitiesList" class="records-list">
+                <!-- 動態生成活動記錄 -->
             </div>
         </div>
 
-        <!-- 統計圖表 -->
-        <div id="chartsSection" class="content-section" style="display: none;">
-            <div class="section-header">
-                <h2>統計圖表</h2>
-                <button class="back-btn">← 返回</button>
+        <!-- 統計頁面 -->
+        <div id="statistics" class="page">
+            <div class="page-header">
+                <h2><i class="fas fa-chart-line"></i> 數據統計</h2>
+                <div class="stats-controls">
+                    <select id="statsDateRange">
+                        <option value="7">最近7天</option>
+                        <option value="30">最近30天</option>
+                        <option value="90">最近90天</option>
+                    </select>
+                    <div class="export-buttons">
+                        <button class="btn btn-secondary" id="exportDataBtn">
+                            <i class="fas fa-download"></i> 匯出資料
+                        </button>
+                        <button class="btn btn-secondary" id="importDataBtn">
+                            <i class="fas fa-upload"></i> 匯入資料
+                        </button>
+                        <input type="file" id="importFileInput" accept=".json" style="display: none;">
+                    </div>
+                </div>
             </div>
-            
-            <div class="chart-controls">
-                <select id="chartPeriod" class="period-select">
-                    <option value="week">最近一週</option>
-                    <option value="month">最近一月</option>
-                    <option value="3months">最近三個月</option>
-                </select>
-            </div>
-
-            <div class="charts-container">
-                <div class="chart-card">
+            <div class="stats-grid">
+                <div class="card stat-card">
                     <h3>餵食統計</h3>
                     <canvas id="feedingChart"></canvas>
                 </div>
-                <div class="chart-card">
+                <div class="card stat-card">
                     <h3>睡眠統計</h3>
                     <canvas id="sleepChart"></canvas>
                 </div>
-                <div class="chart-card">
-                    <h3>活動統計</h3>
-                    <canvas id="activityChart"></canvas>
+                <div class="card stat-card">
+                    <h3>尿布統計</h3>
+                    <canvas id="diaperChart"></canvas>
                 </div>
-            </div>
-        </div>
-
-        <!-- 備份還原 -->
-        <div id="backupSection" class="content-section" style="display: none;">
-            <div class="section-header">
-                <h2>備份與還原</h2>
-                <button class="back-btn">← 返回</button>
-            </div>
-            
-            <div class="backup-container">
-                <div class="backup-card">
-                    <h3>備份資料</h3>
-                    <p>將所有資料備份到JSON檔案</p>
-                    <button id="backupBtn" class="backup-btn">下載備份檔案</button>
-                </div>
-
-                <div class="backup-card">
-                    <h3>還原資料</h3>
-                    <p>從JSON檔案還原資料</p>
-                    <input type="file" id="restoreFile" accept=".json" style="display: none;">
-                    <button id="restoreBtn" class="backup-btn">選擇還原檔案</button>
-                </div>
-
-                <div class="backup-card">
-                    <h3>清除所有資料</h3>
-                    <p>⚠️ 此操作不可復原</p>
-                    <button id="clearDataBtn" class="danger-btn">清除所有資料</button>
+                <div class="card stat-card">
+                    <h3>成長趨勢</h3>
+                    <canvas id="growthChart"></canvas>
                 </div>
             </div>
         </div>
     </main>
 
-    <!-- 彈出視窗 -->
-    
-    <!-- 設定彈出視窗 -->
-    <div id="settingsModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>設定</h2>
-                <button class="close-btn">×</button>
-            </div>
-            <div class="modal-body">
-                <div class="setting-group">
-                    <label for="timezoneSelect">時區設定</label>
-                    <select id="timezoneSelect" class="setting-input">
-                        <!-- 動態生成時區選項 -->
-                    </select>
-                </div>
-                
-                <div class="setting-group">
-                    <label for="dateFormatSelect">日期格式</label>
-                    <select id="dateFormatSelect" class="setting-input">
-                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                        <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                    </select>
-                </div>
-
-                <div class="setting-group">
-                    <label for="languageSelect">語言設定</label>
-                    <select id="languageSelect" class="setting-input">
-                        <option value="zh-TW">繁體中文</option>
-                        <option value="zh-CN">简体中文</option>
-                        <option value="en">English</option>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="saveSettingsBtn" class="save-btn">儲存</button>
-                <button class="cancel-btn">取消</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 兒童表單彈出視窗 -->
+    <!-- 模態視窗 -->
+    <!-- 寶寶資料模態視窗 -->
     <div id="childModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="childModalTitle">新增寶寶</h2>
-                <button class="close-btn">×</button>
+                <h3 id="childModalTitle">新增寶寶</h3>
+                <button class="modal-close">&times;</button>
             </div>
-            <div class="modal-body">
-                <form id="childForm">
-                    <div class="form-group">
-                        <label for="childName">寶寶姓名 *</label>
-                        <input type="text" id="childName" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="childBirthDate">出生日期 *</label>
-                        <input type="date" id="childBirthDate" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="childGender">性別</label>
-                        <select id="childGender">
-                            <option value="">請選擇</option>
-                            <option value="male">男孩</option>
-                            <option value="female">女孩</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="childPhoto">寶寶照片</label>
-                        <input type="file" id="childPhoto" accept="image/*">
-                        <div id="childPhotoPreview" class="photo-preview"></div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="childNotes">備註</label>
-                        <textarea id="childNotes" rows="3"></textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button id="saveChildBtn" class="save-btn">儲存</button>
-                <button class="cancel-btn">取消</button>
-            </div>
+            <form id="childForm" class="modal-body">
+                <div class="form-group">
+                    <label for="childName">姓名 *</label>
+                    <input type="text" id="childName" required>
+                </div>
+                <div class="form-group">
+                    <label for="childBirthDate">出生日期 *</label>
+                    <input type="date" id="childBirthDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="childGender">性別</label>
+                    <select id="childGender">
+                        <option value="male">男</option>
+                        <option value="female">女</option>
+                        <option value="other">其他</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="childPhoto">照片</label>
+                    <input type="file" id="childPhoto" accept="image/*">
+                    <div id="childPhotoPreview" class="photo-preview"></div>
+                </div>
+                <div class="form-group">
+                    <label for="childNotes">備註</label>
+                    <textarea id="childNotes" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <!-- 記錄表單彈出視窗 -->
-    <div id="recordModal" class="modal">
+    <!-- 餵食記錄模態視窗 -->
+    <div id="feedingModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="recordModalTitle">新增記錄</h2>
-                <button class="close-btn">×</button>
+                <h3 id="feedingModalTitle">新增餵食記錄</h3>
+                <button class="modal-close">&times;</button>
             </div>
-            <div class="modal-body">
-                <form id="recordForm">
-                    <!-- 動態生成表單內容 -->
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button id="saveRecordBtn" class="save-btn">儲存</button>
-                <button class="cancel-btn">取消</button>
-            </div>
+            <form id="feedingForm" class="modal-body">
+                <div class="form-group">
+                    <label for="feedingType">餵食類型 *</label>
+                    <select id="feedingType" required>
+                        <option value="breast">母乳</option>
+                        <option value="formula">配方奶</option>
+                        <option value="solids">固體食物</option>
+                    </select>
+                </div>
+                <div class="form-group" id="breastfeedingFields">
+                    <label for="feedingStartTime">開始時間</label>
+                    <input type="datetime-local" id="feedingStartTime">
+                    <label for="feedingEndTime">結束時間</label>
+                    <input type="datetime-local" id="feedingEndTime">
+                </div>
+                <div class="form-group" id="quantityFields">
+                    <label for="feedingQuantity">份量</label>
+                    <div class="quantity-input">
+                        <input type="number" id="feedingQuantity" min="0" step="0.1">
+                        <select id="feedingUnit">
+                            <option value="ml">毫升</option>
+                            <option value="oz">盎司</option>
+                            <option value="g">公克</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="feedingNotes">備註</label>
+                    <textarea id="feedingNotes" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <!-- 確認對話框 -->
+    <!-- 睡眠記錄模態視窗 -->
+    <div id="sleepModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="sleepModalTitle">新增睡眠記錄</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="sleepForm" class="modal-body">
+                <div class="form-group">
+                    <label for="sleepStartTime">開始時間 *</label>
+                    <input type="datetime-local" id="sleepStartTime" required>
+                </div>
+                <div class="form-group">
+                    <label for="sleepEndTime">結束時間</label>
+                    <input type="datetime-local" id="sleepEndTime">
+                </div>
+                <div class="form-group">
+                    <label for="sleepNotes">備註</label>
+                    <textarea id="sleepNotes" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 尿布記錄模態視窗 -->
+    <div id="diaperModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="diaperModalTitle">新增尿布記錄</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="diaperForm" class="modal-body">
+                <div class="form-group">
+                    <label for="diaperType">類型 *</label>
+                    <select id="diaperType" required>
+                        <option value="wet">濕尿布</option>
+                        <option value="poop">便便</option>
+                        <option value="mixed">濕尿布+便便</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="diaperTime">時間 *</label>
+                    <input type="datetime-local" id="diaperTime" required>
+                </div>
+                <div class="form-group">
+                    <label for="diaperNotes">備註</label>
+                    <textarea id="diaperNotes" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 健康記錄模態視窗 -->
+    <div id="healthModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="healthModalTitle">新增健康記錄</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="healthForm" class="modal-body">
+                <div class="form-group">
+                    <label for="healthType">記錄類型 *</label>
+                    <select id="healthType" required>
+                        <option value="vaccination">疫苗接種</option>
+                        <option value="medication">用藥記錄</option>
+                        <option value="illness">生病記錄</option>
+                        <option value="checkup">健檢記錄</option>
+                        <option value="temperature">體溫</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="healthDate">日期 *</label>
+                    <input type="datetime-local" id="healthDate" required>
+                </div>
+                <div class="form-group" id="temperatureFields">
+                    <label for="temperature">體溫 (°C)</label>
+                    <input type="number" id="temperature" step="0.1" min="30" max="45">
+                    <label for="temperatureMethod">測量方式</label>
+                    <select id="temperatureMethod">
+                        <option value="ear">耳溫</option>
+                        <option value="forehead">額溫</option>
+                        <option value="armpit">腋溫</option>
+                        <option value="mouth">口溫</option>
+                        <option value="rectal">肛溫</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="healthTitle">標題</label>
+                    <input type="text" id="healthTitle">
+                </div>
+                <div class="form-group">
+                    <label for="healthNotes">詳細資訊</label>
+                    <textarea id="healthNotes" rows="4"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 里程碑記錄模態視窗 -->
+    <div id="milestoneModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="milestoneModalTitle">新增里程碑</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="milestoneForm" class="modal-body">
+                <div class="form-group">
+                    <label for="milestoneCategory">分類 *</label>
+                    <select id="milestoneCategory" required>
+                        <option value="motor">動作發展</option>
+                        <option value="language">語言發展</option>
+                        <option value="social">社交發展</option>
+                        <option value="cognitive">認知發展</option>
+                        <option value="selfcare">自理能力</option>
+                        <option value="custom">自訂</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="milestoneTitle">里程碑 *</label>
+                    <input type="text" id="milestoneTitle" required>
+                </div>
+                <div class="form-group">
+                    <label for="milestoneDate">達成日期</label>
+                    <input type="date" id="milestoneDate">
+                </div>
+                <div class="form-group">
+                    <label for="milestoneNotes">備註</label>
+                    <textarea id="milestoneNotes" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 活動記錄模態視窗 -->
+    <div id="activityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="activityModalTitle">新增活動記錄</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="activityForm" class="modal-body">
+                <div class="form-group">
+                    <label for="activityType">活動類型 *</label>
+                    <select id="activityType" required>
+                        <option value="bath">洗澡</option>
+                        <option value="massage">按摩</option>
+                        <option value="changing">換衣服/護理</option>
+                        <option value="tummy_time">趴睡時間</option>
+                        <option value="sensory_play">感官遊戲</option>
+                        <option value="reading">親子閱讀</option>
+                        <option value="music">音樂互動</option>
+                        <option value="walk">散步/推車</option>
+                        <option value="sunbath">曬太陽</option>
+                        <option value="social">社交互動</option>
+                        <option value="custom">自訂活動</option>
+                    </select>
+                </div>
+                <div class="form-group" id="customActivityField">
+                    <label for="customActivityName">活動名稱</label>
+                    <input type="text" id="customActivityName">
+                </div>
+                <div class="form-group">
+                    <label for="activityDate">日期時間 *</label>
+                    <input type="datetime-local" id="activityDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="activityDuration">持續時間 (分鐘)</label>
+                    <input type="number" id="activityDuration" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="activityMood">寶寶情緒</label>
+                    <select id="activityMood">
+                        <option value="">--選擇--</option>
+                        <option value="happy">開心</option>
+                        <option value="calm">平靜</option>
+                        <option value="cranky">煩躁</option>
+                        <option value="sleepy">想睡</option>
+                        <option value="excited">興奮</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="activityPhoto">照片</label>
+                    <input type="file" id="activityPhoto" accept="image/*">
+                    <div id="activityPhotoPreview" class="photo-preview"></div>
+                </div>
+                <div class="form-group">
+                    <label for="activityNotes">備註</label>
+                    <textarea id="activityNotes" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 確認刪除模態視窗 -->
     <div id="confirmModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>確認操作</h2>
+                <h3>確認刪除</h3>
+                <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
-                <p id="confirmMessage"></p>
+                <p id="confirmMessage">您確定要刪除這個記錄嗎？此操作無法復原。</p>
             </div>
             <div class="modal-footer">
-                <button id="confirmBtn" class="confirm-btn">確認</button>
-                <button class="cancel-btn">取消</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">刪除</button>
             </div>
         </div>
     </div>
 
-    <!-- 通知訊息 -->
-    <div id="notification" class="notification">
-        <span id="notificationMessage"></span>
-        <button id="closeNotification" class="close-notification">×</button>
+    <!-- 加載中覆蓋層 -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <i class="fas fa-baby fa-spin"></i>
+            <p>載入中...</p>
+        </div>
     </div>
 
-    <!-- JavaScript -->
-    <script src="./script.js"></script>
+    <!-- 引入腳本 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
