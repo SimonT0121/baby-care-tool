@@ -163,14 +163,7 @@ function updateRecord(storeName, data) {
 }
 
 function deleteRecord(storeName, id) {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
-        const request = store.delete(id);
-        
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-    });
+    return deleteRecordFromDB(storeName, id);
 }
 
 function getAllRecords(storeName) {
@@ -889,7 +882,7 @@ async function deleteRecord() {
     
     if (await showConfirm('刪除記錄', '確定要刪除這筆記錄嗎？')) {
         try {
-            await deleteRecord(DB_STORES[recordType], parseInt(recordId));
+            await deleteRecordFromDB(DB_STORES[recordType], parseInt(recordId));
             showToast('記錄已刪除', 'success');
             closeModal('recordModal');
             loadDashboard();
@@ -899,6 +892,18 @@ async function deleteRecord() {
             showToast('刪除記錄失敗', 'error');
         }
     }
+}
+
+// 重新命名原本的deleteRecord函數以避免衝突
+function deleteRecordFromDB(storeName, id) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.delete(id);
+        
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
 }
 
 // ======================
@@ -1088,14 +1093,30 @@ async function deleteMilestone() {
 // 儀表板功能
 // ======================
 async function loadDashboard() {
-    if (!currentChild) return;
+    console.log('載入儀表板...');
+    
+    if (!currentChild) {
+        console.log('沒有選擇孩子，顯示空狀態');
+        showEmptyState();
+        return;
+    }
+    
+    console.log('當前孩子:', currentChild.name);
     
     try {
         // 載入今日摘要
+        console.log('載入今日摘要...');
         await loadTodaySummary();
         
         // 載入圖表
-        await loadChart('feeding');
+        console.log('載入圖表...');
+        if (typeof Chart !== 'undefined') {
+            await loadChart('feeding');
+        } else {
+            console.warn('Chart.js 未載入，跳過圖表顯示');
+        }
+        
+        console.log('儀表板載入完成');
         
     } catch (error) {
         console.error('載入儀表板失敗:', error);
@@ -1731,8 +1752,23 @@ function formatDateTime(dateTimeString) {
 // 事件監聽器初始化
 // ======================
 function initEventListeners() {
+    console.log('初始化事件監聽器...');
+    
+    // 安全的事件綁定函數
+    function safeAddEventListener(selector, event, handler) {
+        const element = document.getElementById(selector) || document.querySelector(selector);
+        if (element) {
+            element.addEventListener(event, handler);
+            console.log(`成功綁定事件: ${selector}`);
+            return true;
+        } else {
+            console.error(`找不到元素: ${selector}`);
+            return false;
+        }
+    }
+    
     // 孩子選擇變更
-    document.getElementById('childSelect').addEventListener('change', async (e) => {
+    safeAddEventListener('childSelect', 'change', async (e) => {
         if (e.target.value) {
             try {
                 const transaction = db.transaction([DB_STORES.children], 'readonly');
@@ -1753,7 +1789,7 @@ function initEventListeners() {
     });
     
     // 添加孩子按鈕
-    document.getElementById('addChildBtn').addEventListener('click', () => openChildModal());
+    safeAddEventListener('addChildBtn', 'click', () => openChildModal());
     
     // 快速記錄按鈕
     document.querySelectorAll('.quick-btn').forEach(btn => {
@@ -1784,7 +1820,7 @@ function initEventListeners() {
     });
     
     // 添加里程碑按鈕
-    document.getElementById('addMilestoneBtn').addEventListener('click', () => {
+    safeAddEventListener('addMilestoneBtn', 'click', () => {
         const activeTab = document.querySelector('.milestone-tab.active');
         const category = activeTab ? activeTab.getAttribute('data-category') : 'motor';
         openMilestoneModal(category);
@@ -1799,37 +1835,39 @@ function initEventListeners() {
     });
     
     // 設定按鈕
-    document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+    safeAddEventListener('settingsBtn', 'click', openSettingsModal);
     
     // 孩子表單
-    document.getElementById('childForm').addEventListener('submit', saveChild);
-    document.getElementById('cancelChild').addEventListener('click', () => closeModal('childModal'));
-    document.getElementById('deleteChild').addEventListener('click', deleteChild);
+    safeAddEventListener('childForm', 'submit', saveChild);
+    safeAddEventListener('cancelChild', 'click', () => closeModal('childModal'));
+    safeAddEventListener('deleteChild', 'click', deleteChild);
     
     // 記錄表單
-    document.getElementById('recordForm').addEventListener('submit', saveRecord);
-    document.getElementById('cancelRecord').addEventListener('click', () => closeModal('recordModal'));
-    document.getElementById('deleteRecord').addEventListener('click', deleteRecord);
+    safeAddEventListener('recordForm', 'submit', saveRecord);
+    safeAddEventListener('cancelRecord', 'click', () => closeModal('recordModal'));
+    safeAddEventListener('deleteRecord', 'click', deleteRecord);
     
     // 里程碑表單
-    document.getElementById('milestoneForm').addEventListener('submit', saveMilestone);
-    document.getElementById('cancelMilestone').addEventListener('click', () => closeModal('milestoneModal'));
-    document.getElementById('deleteMilestone').addEventListener('click', deleteMilestone);
+    safeAddEventListener('milestoneForm', 'submit', saveMilestone);
+    safeAddEventListener('cancelMilestone', 'click', () => closeModal('milestoneModal'));
+    safeAddEventListener('deleteMilestone', 'click', deleteMilestone);
     
     // 設定對話框
-    document.getElementById('closeSettings').addEventListener('click', () => closeModal('settingsModal'));
-    document.getElementById('exportData').addEventListener('click', exportData);
-    document.getElementById('importData').addEventListener('click', importData);
-    document.getElementById('importFile').addEventListener('change', handleImportFile);
+    safeAddEventListener('closeSettings', 'click', () => closeModal('settingsModal'));
+    safeAddEventListener('exportData', 'click', exportData);
+    safeAddEventListener('importData', 'click', importData);
+    safeAddEventListener('importFile', 'change', handleImportFile);
     
     // 確認對話框關閉
-    document.getElementById('confirmCancel').addEventListener('click', () => closeModal('confirmModal'));
+    safeAddEventListener('confirmCancel', 'click', () => closeModal('confirmModal'));
     
     // 模態對話框關閉按鈕
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const modal = e.target.closest('.modal');
-            modal.classList.remove('show');
+            if (modal) {
+                modal.classList.remove('show');
+            }
         });
     });
     
@@ -1843,48 +1881,111 @@ function initEventListeners() {
     });
     
     // 記錄類型篩選
-    document.getElementById('recordTypeFilter').addEventListener('change', filterRecords);
-    document.getElementById('recordDateFilter').addEventListener('change', filterRecords);
+    safeAddEventListener('recordTypeFilter', 'change', filterRecords);
+    safeAddEventListener('recordDateFilter', 'change', filterRecords);
     
     // 餵食類型變更
-    document.getElementById('feedingType').addEventListener('change', showFeedingSubfields);
+    safeAddEventListener('feedingType', 'change', showFeedingSubfields);
     
     // 健康類型變更
-    document.getElementById('healthType').addEventListener('change', showHealthSubfields);
+    safeAddEventListener('healthType', 'change', showHealthSubfields);
     
     // 活動類型變更
-    document.getElementById('activityType').addEventListener('change', showCustomActivityField);
+    safeAddEventListener('activityType', 'change', showCustomActivityField);
     
     // 照片上傳
-    document.getElementById('childPhoto').addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            handlePhotoUpload(e.target, document.getElementById('photoPreview'));
+    safeAddEventListener('childPhoto', 'change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const preview = document.getElementById('photoPreview');
+            if (preview) {
+                handlePhotoUpload(e.target, preview);
+            }
         }
     });
     
-    document.getElementById('recordPhoto').addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            handlePhotoUpload(e.target, document.getElementById('recordPhotoPreview'));
+    safeAddEventListener('recordPhoto', 'change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const preview = document.getElementById('recordPhotoPreview');
+            if (preview) {
+                handlePhotoUpload(e.target, preview);
+            }
         }
     });
     
     // 照片預覽區點擊事件
-    document.getElementById('photoPreview').addEventListener('click', () => {
-        document.getElementById('childPhoto').click();
-    });
+    const photoPreview = document.getElementById('photoPreview');
+    if (photoPreview) {
+        photoPreview.addEventListener('click', () => {
+            const childPhoto = document.getElementById('childPhoto');
+            if (childPhoto) childPhoto.click();
+        });
+    }
     
-    document.getElementById('recordPhotoPreview').addEventListener('click', () => {
-        document.getElementById('recordPhoto').click();
-    });
+    const recordPhotoPreview = document.getElementById('recordPhotoPreview');
+    if (recordPhotoPreview) {
+        recordPhotoPreview.addEventListener('click', () => {
+            const recordPhoto = document.getElementById('recordPhoto');
+            if (recordPhoto) recordPhoto.click();
+        });
+    }
+    
+    console.log('事件監聽器初始化完成');
 }
 
 // ======================
 // 應用程式初始化
 // ======================
+function checkRequiredElements() {
+    const requiredElements = [
+        'loadingScreen',
+        'app',
+        'childSelect',
+        'addChildBtn',
+        'todaySummary',
+        'mainChart',
+        'recordsList',
+        'milestonesList'
+    ];
+    
+    const missingElements = [];
+    requiredElements.forEach(id => {
+        if (!document.getElementById(id)) {
+            missingElements.push(id);
+        }
+    });
+    
+    if (missingElements.length > 0) {
+        console.error('缺少必要的DOM元素:', missingElements);
+        return false;
+    }
+    
+    console.log('所有必要的DOM元素都存在');
+    return true;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    initTheme();
-    initEventListeners();
-    initDB();
+    console.log('DOM載入完成，開始初始化...');
+    
+    // 檢查必要元素
+    if (!checkRequiredElements()) {
+        console.error('初始化失敗：缺少必要的DOM元素');
+        return;
+    }
+    
+    // 初始化各個模組
+    try {
+        initTheme();
+        console.log('主題初始化完成');
+        
+        initEventListeners();
+        console.log('事件監聽器初始化完成');
+        
+        initDB();
+        console.log('資料庫初始化開始');
+        
+    } catch (error) {
+        console.error('初始化過程中發生錯誤:', error);
+    }
 });
 
 // 處理頁面可見性變更（應用回到前台時刷新數據）
