@@ -1,3 +1,4 @@
+console.log('Script loaded');
 /**
  * 嬰兒照護追蹤應用程式 - 主要JavaScript檔案
  * 使用純粹的前端技術和IndexedDB進行資料存儲
